@@ -94,7 +94,7 @@ export function Ajustes() {
                   <Server className="size-5 text-[var(--color-success)]" />
                   <div>
                     <p className="text-sm font-medium">Supabase conectado</p>
-                    <p className="text-xs text-[var(--text-subtle)]">Las credenciales están configuradas en .env</p>
+                    <p className="text-xs text-[var(--text-subtle)]">Las credenciales están configuradas.</p>
                   </div>
                   <Badge tone="success" dot className="ml-auto">online</Badge>
                 </>
@@ -109,10 +109,6 @@ export function Ajustes() {
                 </>
               )}
             </div>
-            <p className="text-xs text-[var(--text-subtle)]">
-              Para conectar Supabase, copiá <span className="font-mono">.env.example</span> a <span className="font-mono">.env</span> y completá tus credenciales.
-              El schema SQL está en <span className="font-mono">supabase/schema.sql</span>.
-            </p>
           </CardBody>
         </Card>
 
@@ -133,17 +129,6 @@ export function Ajustes() {
               hidden
               onChange={(e) => importarJSON(e.target.files?.[0])}
             />
-            <Button
-              variant="outline"
-              className="justify-start"
-              onClick={() => {
-                if (!confirm('Esto va a reemplazar los datos por los de ejemplo. ¿Continuar?')) return
-                resetTodo()
-                toast({ kind: 'info', title: 'Datos restaurados a demo' })
-              }}
-            >
-              <RotateCcw className="size-4" /> Resetear a demo
-            </Button>
             <Button
               variant="danger"
               className="justify-start"
@@ -171,9 +156,9 @@ export function Ajustes() {
               <Atajo k="B"    desc="Buscar producto (en POS)" />
             </ul>
             <div className="text-xs leading-relaxed text-[var(--text-muted)]">
-              <p>Stack: <span className="font-mono">React 19 · Vite · Tailwind v4 · Zustand · React Router 7 · Recharts · Fuse.js · Supabase (opcional)</span>.</p>
-              <p className="mt-2">Persistencia: <span className="font-mono">localStorage</span> bajo la clave <span className="font-mono">agm-system-v1</span>. Conectando <span className="font-mono">.env</span> con Supabase queda el cliente listo para sincronizar.</p>
-              <p className="mt-2 text-[var(--text-subtle)]">v0.1 · construido con cariño rioplatense.</p>
+              <p>Stack: <span className="font-mono">React 19 · Vite · Tailwind v4 · Zustand · React Router 7 · Recharts · Fuse.js · Supabase</span>.</p>
+              <p className="mt-2">Persistencia: <span className="font-mono">localStorage</span> bajo la clave <span className="font-mono">agm-system-v1</span>.<span className="font-mono"></span></p>
+              <p className="mt-2 text-[var(--text-subtle)]">v0.1 · Realizado y codificado por Agustín Merlo.</p>
             </div>
           </CardBody>
         </Card>
