@@ -485,6 +485,30 @@ $$;
 
 grant execute on function public.app_ajustar_stock(bigint, integer) to authenticated;
 
+-- Vaciar todos los datos del owner actual (NO borra el perfil ni la cuenta).
+-- Útil para el botón "Vaciar todo" desde Ajustes.
+create or replace function public.app_vaciar_datos()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_owner uuid := auth.uid();
+begin
+  if v_owner is null then raise exception 'no_auth'; end if;
+
+  delete from public.venta_items      where owner_id = v_owner;
+  delete from public.movimientos_caja where owner_id = v_owner;
+  delete from public.ventas           where owner_id = v_owner;
+  delete from public.productos        where owner_id = v_owner;
+  delete from public.personas         where owner_id = v_owner;
+  delete from public.categorias       where owner_id = v_owner;
+end;
+$$;
+
+grant execute on function public.app_vaciar_datos() to authenticated;
+
 -- =====================================================================
 -- Listo. Cada negocio que se registra obtiene su perfil automáticamente
 -- y todas sus tablas están aisladas por owner_id.

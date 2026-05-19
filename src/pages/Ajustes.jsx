@@ -132,10 +132,17 @@ export function Ajustes() {
             <Button
               variant="danger"
               className="justify-start"
-              onClick={() => {
-                if (!confirm('Esto borra TODOS los datos locales. ¿Estás seguro?')) return
-                vaciarDatos()
-                toast({ kind: 'warning', title: 'Datos eliminados' })
+              onClick={async () => {
+                const msg = supabaseEnabled
+                  ? 'Esto borra TODOS tus datos en Supabase (productos, ventas, clientes, etc). ¿Seguro?'
+                  : 'Esto borra TODOS los datos locales. ¿Estás seguro?'
+                if (!confirm(msg)) return
+                try {
+                  await vaciarDatos()
+                  toast({ kind: 'warning', title: 'Datos eliminados' })
+                } catch (e) {
+                  toast({ kind: 'danger', title: 'No se pudo vaciar', message: e.message })
+                }
               }}
             >
               <Trash2 className="size-4" /> Vaciar todo

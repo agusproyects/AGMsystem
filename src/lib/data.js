@@ -189,6 +189,15 @@ export const caja = {
 }
 
 // =====================================================================
+// Vaciar todos los datos del owner actual (RPC atómico).
+// =====================================================================
+export async function vaciarTodo() {
+  ensure()
+  const { error } = await supabase.rpc('app_vaciar_datos')
+  if (error) rethrow('vaciarTodo', error)
+}
+
+// =====================================================================
 // Refresh helpers cuando una RPC mutó varias tablas
 // =====================================================================
 export async function refreshProductosYCaja() {

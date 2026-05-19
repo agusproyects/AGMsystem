@@ -342,13 +342,18 @@ export const useStore = create(
           movimientosCaja: seedMovimientosCaja,
         })
       },
-      vaciarDatos: () => set({
-        categorias: [],
-        productos: [],
-        personas: [],
-        ventas: [],
-        movimientosCaja: [],
-      }),
+      vaciarDatos: async () => {
+        if (supabaseEnabled) {
+          await data.vaciarTodo()
+        }
+        set({
+          categorias: [],
+          productos: [],
+          personas: [],
+          ventas: [],
+          movimientosCaja: [],
+        })
+      },
     }),
     {
       name: 'agm-system-v1',
