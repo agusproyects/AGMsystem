@@ -24,16 +24,16 @@ export function Caja() {
   const filtrados = useMemo(() => {
     const arr = [...movs].sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
     if (modo === 'todo') return arr
-    const f = new Date(filtro)
+    const [y, mo, d] = filtro.split('-').map(Number)
     if (modo === 'dia') {
-      const start = new Date(f); start.setHours(0, 0, 0, 0)
-      const end = new Date(start); end.setDate(end.getDate() + 1)
-      return arr.filter(m => { const d = new Date(m.fecha); return d >= start && d < end })
+      const start = new Date(y, mo - 1, d, 0, 0, 0, 0)
+      const end   = new Date(y, mo - 1, d + 1, 0, 0, 0, 0)
+      return arr.filter(m => { const x = new Date(m.fecha); return x >= start && x < end })
     }
     // mes
-    const start = new Date(f.getFullYear(), f.getMonth(), 1)
-    const end   = new Date(f.getFullYear(), f.getMonth() + 1, 1)
-    return arr.filter(m => { const d = new Date(m.fecha); return d >= start && d < end })
+    const start = new Date(y, mo - 1, 1, 0, 0, 0, 0)
+    const end   = new Date(y, mo, 1, 0, 0, 0, 0)
+    return arr.filter(m => { const x = new Date(m.fecha); return x >= start && x < end })
   }, [movs, modo, filtro])
 
   const ingresos = filtrados.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0)
