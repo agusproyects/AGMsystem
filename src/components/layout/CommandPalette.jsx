@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Fuse from 'fuse.js'
-import { Search, ArrowRight, Package, Users, Truck, ShoppingCart, LayoutDashboard, Wallet, LineChart, Settings } from 'lucide-react'
+import { Search, ArrowRight, Package, Users, Truck, ShoppingCart, ShoppingBag, LayoutDashboard, Wallet, LineChart, Settings, Lock, Receipt } from 'lucide-react'
 import { useStore } from '@/store/useStore.js'
 import { cn } from '@/lib/utils.js'
 import { money } from '@/lib/format.js'
@@ -9,12 +9,20 @@ import { money } from '@/lib/format.js'
 const routes = [
   { kind: 'page', label: 'Dashboard',   icon: LayoutDashboard, to: '/' },
   { kind: 'page', label: 'Ventas',      icon: ShoppingCart,    to: '/ventas' },
+  { kind: 'page', label: 'Compras',     icon: ShoppingBag,     to: '/compras' },
   { kind: 'page', label: 'Productos',   icon: Package,         to: '/productos' },
   { kind: 'page', label: 'Clientes',    icon: Users,           to: '/clientes' },
   { kind: 'page', label: 'Proveedores', icon: Truck,           to: '/proveedores' },
   { kind: 'page', label: 'Caja',        icon: Wallet,          to: '/caja' },
   { kind: 'page', label: 'Reportes',    icon: LineChart,       to: '/reportes' },
   { kind: 'page', label: 'Ajustes',     icon: Settings,        to: '/ajustes' },
+]
+
+const acciones = [
+  { kind: 'acción', label: 'Nueva venta',     icon: ShoppingCart, to: '/ventas',  hint: 'POS' },
+  { kind: 'acción', label: 'Nueva compra',    icon: ShoppingBag,  to: '/compras', hint: 'a proveedor' },
+  { kind: 'acción', label: 'Cerrar caja',     icon: Lock,         to: '/caja',    hint: 'arqueo Z' },
+  { kind: 'acción', label: 'Ver reportes',    icon: Receipt,      to: '/reportes' },
 ]
 
 export function CommandPalette({ open, onClose }) {
@@ -27,6 +35,7 @@ export function CommandPalette({ open, onClose }) {
 
   const corpus = useMemo(() => [
     ...routes,
+    ...acciones,
     ...productos.map(p => ({ kind: 'producto', label: p.nombre, sku: p.sku, hint: money(p.precio), to: `/productos?q=${encodeURIComponent(p.nombre)}` })),
     ...personas.map(p => ({ kind: p.tipo, label: p.nombre, hint: p.telefono || p.email, to: p.tipo === 'cliente' ? `/clientes?q=${encodeURIComponent(p.nombre)}` : `/proveedores?q=${encodeURIComponent(p.nombre)}` })),
   ], [productos, personas])

@@ -53,11 +53,16 @@ export function AppLayout() {
     return () => window.removeEventListener('keydown', onKey)
   }, [navigate, setTheme, theme])
 
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+
   return (
     <div className="grain ambient flex h-screen overflow-hidden bg-[var(--bg)] text-[var(--text)]">
-      <Sidebar />
+      <Sidebar mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
       <div className="relative z-[1] flex min-w-0 flex-1 flex-col">
-        <Topbar onOpenSearch={() => setPaletteOpen(true)} />
+        <Topbar
+          onOpenSearch={() => setPaletteOpen(true)}
+          onOpenMobileNav={() => setMobileNavOpen(true)}
+        />
         <main key={location.pathname} className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-10 anim-fade-in">
           <div className="mx-auto w-full max-w-7xl">
             <Outlet />

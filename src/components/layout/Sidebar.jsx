@@ -13,7 +13,10 @@ import {
   PanelLeftOpen,
   Sun,
   Moon,
+  X,
 } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
 import { useStore } from '@/store/useStore.js'
 import { cn } from '@/lib/utils.js'
 import { Button } from '@/components/ui/Button.jsx'
@@ -31,17 +34,38 @@ const nav = [
   { to: '/ajustes',     label: 'Ajustes',     icon: Settings,        shortcut: '9' },
 ]
 
-export function Sidebar() {
+export function Sidebar({ mobileOpen = false, onCloseMobile }) {
   const collapsed = useStore(s => s.sidebarCollapsed)
   const toggleSidebar = useStore(s => s.toggleSidebar)
   const theme = useStore(s => s.theme)
   const toggleTheme = useStore(s => s.toggleTheme)
+  const location = useLocation()
+
+  // Cerrar el drawer móvil cuando cambia la ruta
+  useEffect(() => {
+    if (mobileOpen) onCloseMobile?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname])
 
   return (
+    <>
+      {/* Overlay móvil */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-[color-mix(in_oklab,var(--color-ink-950)_60%,transparent)] backdrop-blur-sm md:hidden"
+          onClick={onCloseMobile}
+        />
+      )}
     <aside
       className={cn(
-        'relative z-10 flex h-screen shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-elev)]/70 backdrop-blur transition-[width] duration-300',
-        collapsed ? 'w-[68px]' : 'w-[232px]',
+        'flex h-screen shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-elev)]/95 backdrop-blur transition-[width,transform] duration-300',
+        // Desktop: estático
+        'relative z-10 md:translate-x-0',
+        collapsed ? 'md:w-[68px]' : 'md:w-[232px]',
+        // Móvil: drawer fixed
+        'fixed inset-y-0 left-0 z-40 w-[232px]',
+        mobileOpen ? 'translate-x-0' : '-translate-x-full',
+        'md:relative md:flex',
       )}
     >
       {/* Brand */}
@@ -110,11 +134,15 @@ export function Sidebar() {
           {!collapsed && (
             <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-subtle)]">v0.1</span>
           )}
-          <Button variant="ghost" size="icon-sm" onClick={toggleSidebar} aria-label={collapsed ? 'Expandir' : 'Colapsar'}>
+          <Button variant="ghost" size="icon-sm" onClick={toggleSidebar} aria-label={collapsed ? 'Expandir' : 'Colapsar'} className="hidden md:inline-flex">
             {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={onCloseMobile} aria-label="Cerrar menú" className="md:hidden">
+            <X className="size-4" />
           </Button>
         </div>
       </div>
     </aside>
+    </>
   )
 }
