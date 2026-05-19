@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Users, Truck, Plus, Search, Pencil, Trash2, Phone, Mail, MapPin, History, ArrowDownUp } from 'lucide-react'
 import Fuse from 'fuse.js'
 import { useStore } from '@/store/useStore.js'
+import { useShallow } from 'zustand/react/shallow'
 import { money, dateTime, relativeShort } from '@/lib/format.js'
 import { cn } from '@/lib/utils.js'
 import { SectionHeader } from '@/components/ui/SectionHeader.jsx'
@@ -37,7 +38,9 @@ function blank(tipo) {
 
 export function PersonasView({ tipo }) {
   const c = cfg[tipo]
-  const personas = useStore(s => s.personas.filter(p => p.tipo === tipo))
+  // Importante: usar useShallow porque .filter() crea un array nuevo cada render
+  // y sin la comparación shallow zustand dispararía un loop infinito.
+  const personas = useStore(useShallow(s => s.personas.filter(p => p.tipo === tipo)))
   const ventas   = useStore(s => s.ventas)
   const upsert   = useStore(s => s.upsertPersona)
   const remove   = useStore(s => s.removePersona)
