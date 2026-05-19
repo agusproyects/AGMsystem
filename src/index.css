@@ -192,3 +192,47 @@ input::placeholder, textarea::placeholder { color: var(--text-subtle); }
 .bg-card { background: var(--bg-card); }
 .border-app { border-color: var(--border); }
 .border-strong { border-color: var(--border-strong); }
+
+/* ---------- Print: ticket ---------- */
+@media print {
+  @page { margin: 12mm; }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Ocultar todo */
+  body * { visibility: hidden !important; }
+
+  /* Mostrar sólo el ticket */
+  .print-ticket, .print-ticket * { visibility: visible !important; }
+
+  /* Posicionar el ticket en la página */
+  .print-ticket {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+    animation: none !important;
+
+    /* Tokens reescritos para fondo blanco */
+    --bg: #ffffff;
+    --bg-elev: #ffffff;
+    --bg-card: #ffffff;
+    --text: #000000;
+    --text-muted: #333333;
+    --text-subtle: #666666;
+    --border: #cccccc;
+    --border-strong: #999999;
+    --accent: #000000;
+    --accent-text: #000000;
+    --accent-fg: #ffffff;
+  }
+}

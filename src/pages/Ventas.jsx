@@ -347,7 +347,7 @@ function TicketModal({ ticket, onClose, clientes }) {
         </>
       }
     >
-      <div className="print:bg-white print:text-black">
+      <div className="print-ticket print:bg-white print:text-black">
         <div className="flex flex-col items-center gap-1 border-b border-dashed border-[var(--border)] pb-3 text-center">
           <p className="display text-xl">AGM <span className="italic">system</span></p>
           <p className="font-mono text-[11px] text-[var(--text-subtle)]">Comprobante no fiscal</p>
