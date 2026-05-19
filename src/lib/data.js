@@ -158,6 +158,14 @@ export const venta = {
     const { error } = await supabase.rpc('app_anular_venta', { p_venta_id: id })
     if (error) rethrow('venta.anular', error)
   },
+  async devolverItems(venta_id, devoluciones) {
+    ensure()
+    const { error } = await supabase.rpc('app_devolver_items_venta', {
+      p_venta_id: venta_id,
+      p_devoluciones: devoluciones.map(d => ({ item_id: d.item_id, cantidad: Number(d.cantidad) })),
+    })
+    if (error) rethrow('venta.devolverItems', error)
+  },
   // Para refrescar después de una operación
   async byId(id) {
     ensure()
@@ -230,6 +238,37 @@ export const caja = {
       .single()
     if (error) rethrow('caja.registrar', error)
     return row
+  },
+}
+
+// =====================================================================
+// Arqueo / cierre de caja
+// =====================================================================
+export const cierre = {
+  async resumenHoy() {
+    ensure()
+    const { data, error } = await supabase.rpc('app_caja_resumen_hoy')
+    if (error) rethrow('cierre.resumenHoy', error)
+    return data
+  },
+  async cerrar({ efectivo_contado, notas }) {
+    ensure()
+    const { data, error } = await supabase.rpc('app_cerrar_caja', {
+      p_efectivo_contado: Number(efectivo_contado),
+      p_notas: notas || null,
+    })
+    if (error) rethrow('cierre.cerrar', error)
+    return data
+  },
+  async listar(limit = 30) {
+    ensure()
+    const { data, error } = await supabase
+      .from('cierres_caja')
+      .select('*')
+      .order('fecha', { ascending: false })
+      .limit(limit)
+    if (error) rethrow('cierre.listar', error)
+    return data ?? []
   },
 }
 

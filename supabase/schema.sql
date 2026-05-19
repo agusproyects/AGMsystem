@@ -501,6 +501,7 @@ begin
   delete from public.venta_items      where owner_id = v_owner;
   delete from public.compra_items     where owner_id = v_owner;
   delete from public.movimientos_caja where owner_id = v_owner;
+  delete from public.cierres_caja     where owner_id = v_owner;
   delete from public.ventas           where owner_id = v_owner;
   delete from public.compras          where owner_id = v_owner;
   delete from public.productos        where owner_id = v_owner;
@@ -725,6 +726,234 @@ end;
 $$;
 
 grant execute on function public.app_register_pago_persona(bigint, numeric, text, text) to authenticated;
+
+-- ---------------------------------------------------------------------
+-- Devolución parcial de venta:
+-- recibe [(item_id, cantidad)], repone stock, emite egreso parcial en caja
+-- y ajusta el saldo del cliente si la venta era cta. corriente.
+-- ---------------------------------------------------------------------
+create or replace function public.app_devolver_items_venta(
+  p_venta_id    bigint,
+  p_devoluciones jsonb  -- [{item_id: bigint, cantidad: numeric}]
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_owner   uuid := auth.uid();
+  v_venta   record;
+  v_dev     jsonb;
+  v_item    record;
+  v_cant    numeric;
+  v_monto   numeric := 0;
+begin
+  if v_owner is null then raise exception 'no_auth'; end if;
+  if p_devoluciones is null or jsonb_array_length(p_devoluciones) = 0 then
+    raise exception 'sin_items';
+  end if;
+
+  select * into v_venta
+    from public.ventas
+   where id = p_venta_id and owner_id = v_owner;
+  if not found then raise exception 'venta_no_encontrada'; end if;
+  if v_venta.estado <> 'completada' then
+    raise exception 'venta_no_completada';
+  end if;
+
+  for v_dev in select * from jsonb_array_elements(p_devoluciones)
+  loop
+    v_cant := (v_dev->>'cantidad')::numeric;
+    if v_cant is null or v_cant <= 0 then continue; end if;
+
+    select * into v_item
+      from public.venta_items
+     where id = (v_dev->>'item_id')::bigint
+       and venta_id = p_venta_id
+       and owner_id = v_owner;
+    if not found then raise exception 'item_no_encontrado'; end if;
+    if v_cant > v_item.cantidad then
+      raise exception 'cantidad_excede';
+    end if;
+
+    -- Reponer stock si el producto sigue existiendo
+    if v_item.producto_id is not null then
+      update public.productos
+         set stock = stock + v_cant::integer
+       where id = v_item.producto_id and owner_id = v_owner;
+    end if;
+
+    -- Reducir la cantidad/subtotal del item (o borrarlo si queda en 0)
+    if v_cant = v_item.cantidad then
+      delete from public.venta_items where id = v_item.id;
+    else
+      update public.venta_items
+         set cantidad = cantidad - v_cant,
+             subtotal = (cantidad - v_cant) * precio_unit
+       where id = v_item.id;
+    end if;
+
+    v_monto := v_monto + (v_cant * v_item.precio_unit);
+  end loop;
+
+  if v_monto <= 0 then return; end if;
+
+  -- Ajustar totales de la venta
+  update public.ventas
+     set subtotal = greatest(0, subtotal - v_monto),
+         total    = greatest(0, total    - v_monto)
+   where id = p_venta_id and owner_id = v_owner;
+
+  -- Asentar egreso en caja
+  insert into public.movimientos_caja (owner_id, tipo, concepto, monto, metodo_pago, venta_id)
+  values (v_owner, 'egreso', 'Devolución venta #' || p_venta_id, v_monto, v_venta.metodo_pago, p_venta_id);
+
+  -- Compensar cta cte si correspondiera
+  if v_venta.metodo_pago = 'cuenta_corriente' and v_venta.cliente_id is not null then
+    update public.personas
+       set saldo = saldo + v_monto
+     where id = v_venta.cliente_id and owner_id = v_owner;
+  end if;
+end;
+$$;
+
+grant execute on function public.app_devolver_items_venta(bigint, jsonb) to authenticated;
+
+-- ---------------------------------------------------------------------
+-- Cierre de caja (arqueo Z)
+-- ---------------------------------------------------------------------
+create table if not exists public.cierres_caja (
+  id              bigint generated always as identity primary key,
+  owner_id        uuid not null references auth.users(id) on delete cascade,
+  fecha           timestamptz not null default now(),
+  dia             date not null default (now() at time zone 'America/Argentina/Buenos_Aires')::date,
+  efectivo_esperado numeric(12,2) not null default 0,
+  efectivo_contado  numeric(12,2) not null default 0,
+  diferencia        numeric(12,2) not null default 0,
+  total_esperado    numeric(12,2) not null default 0,
+  ingresos          numeric(12,2) not null default 0,
+  egresos           numeric(12,2) not null default 0,
+  notas             text,
+  created_at        timestamptz not null default now()
+);
+
+create index if not exists ix_cierres_caja_owner on public.cierres_caja(owner_id);
+create index if not exists ix_cierres_caja_dia   on public.cierres_caja(dia desc);
+
+drop trigger if exists trg_cierres_caja_owner on public.cierres_caja;
+create trigger trg_cierres_caja_owner
+before insert on public.cierres_caja
+for each row execute function public.tg_set_owner_id();
+
+alter table public.cierres_caja enable row level security;
+
+drop policy if exists "owner cierres_caja sel" on public.cierres_caja;
+create policy "owner cierres_caja sel" on public.cierres_caja
+  for select to authenticated using (owner_id = auth.uid());
+drop policy if exists "owner cierres_caja ins" on public.cierres_caja;
+create policy "owner cierres_caja ins" on public.cierres_caja
+  for insert to authenticated with check (owner_id = auth.uid());
+drop policy if exists "owner cierres_caja upd" on public.cierres_caja;
+create policy "owner cierres_caja upd" on public.cierres_caja
+  for update to authenticated
+  using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+drop policy if exists "owner cierres_caja del" on public.cierres_caja;
+create policy "owner cierres_caja del" on public.cierres_caja
+  for delete to authenticated using (owner_id = auth.uid());
+
+-- Sumario del día actual (ingresos/egresos en efectivo y total)
+create or replace function public.app_caja_resumen_hoy()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_owner uuid := auth.uid();
+  v_tz    text := 'America/Argentina/Buenos_Aires';
+  v_dia   date;
+  v_ef_in numeric := 0; v_ef_eg numeric := 0;
+  v_in    numeric := 0; v_eg    numeric := 0;
+begin
+  if v_owner is null then raise exception 'no_auth'; end if;
+  v_dia := (now() at time zone v_tz)::date;
+
+  select
+    coalesce(sum(case when tipo = 'ingreso' and metodo_pago = 'efectivo' then monto else 0 end), 0),
+    coalesce(sum(case when tipo = 'egreso'  and metodo_pago = 'efectivo' then monto else 0 end), 0),
+    coalesce(sum(case when tipo = 'ingreso' then monto else 0 end), 0),
+    coalesce(sum(case when tipo = 'egreso'  then monto else 0 end), 0)
+  into v_ef_in, v_ef_eg, v_in, v_eg
+  from public.movimientos_caja
+  where owner_id = v_owner
+    and (fecha at time zone v_tz)::date = v_dia;
+
+  return jsonb_build_object(
+    'dia',                v_dia,
+    'efectivo_ingresos',  v_ef_in,
+    'efectivo_egresos',   v_ef_eg,
+    'efectivo_esperado',  v_ef_in - v_ef_eg,
+    'ingresos',           v_in,
+    'egresos',            v_eg,
+    'total_esperado',     v_in - v_eg
+  );
+end;
+$$;
+
+grant execute on function public.app_caja_resumen_hoy() to authenticated;
+
+-- Registrar cierre de caja: calcula los esperados, guarda el cierre.
+create or replace function public.app_cerrar_caja(
+  p_efectivo_contado numeric,
+  p_notas            text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_owner uuid := auth.uid();
+  v_tz    text := 'America/Argentina/Buenos_Aires';
+  v_dia   date;
+  v_ef_in numeric := 0; v_ef_eg numeric := 0;
+  v_in    numeric := 0; v_eg    numeric := 0;
+  v_ef_esp numeric;
+  v_id    bigint;
+begin
+  if v_owner is null then raise exception 'no_auth'; end if;
+  if p_efectivo_contado is null or p_efectivo_contado < 0 then
+    raise exception 'monto_invalido';
+  end if;
+  v_dia := (now() at time zone v_tz)::date;
+
+  select
+    coalesce(sum(case when tipo = 'ingreso' and metodo_pago = 'efectivo' then monto else 0 end), 0),
+    coalesce(sum(case when tipo = 'egreso'  and metodo_pago = 'efectivo' then monto else 0 end), 0),
+    coalesce(sum(case when tipo = 'ingreso' then monto else 0 end), 0),
+    coalesce(sum(case when tipo = 'egreso'  then monto else 0 end), 0)
+  into v_ef_in, v_ef_eg, v_in, v_eg
+  from public.movimientos_caja
+  where owner_id = v_owner
+    and (fecha at time zone v_tz)::date = v_dia;
+
+  v_ef_esp := v_ef_in - v_ef_eg;
+
+  insert into public.cierres_caja (
+    owner_id, dia, efectivo_esperado, efectivo_contado, diferencia,
+    total_esperado, ingresos, egresos, notas
+  ) values (
+    v_owner, v_dia, v_ef_esp, p_efectivo_contado, p_efectivo_contado - v_ef_esp,
+    v_in - v_eg, v_in, v_eg, p_notas
+  )
+  returning id into v_id;
+
+  return (select to_jsonb(c.*) from public.cierres_caja c where c.id = v_id);
+end;
+$$;
+
+grant execute on function public.app_cerrar_caja(numeric, text) to authenticated;
 
 -- =====================================================================
 -- Listo. Cada negocio que se registra obtiene su perfil automáticamente

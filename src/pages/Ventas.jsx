@@ -167,10 +167,30 @@ export function Ventas() {
                   ref={searchRef}
                   value={q}
                   onChange={e => setQ(e.target.value)}
-                  placeholder="Buscar producto por nombre o SKU…"
+                  onKeyDown={e => {
+                    if (e.key !== 'Enter') return
+                    e.preventDefault()
+                    const txt = q.trim()
+                    if (!txt) return
+                    // Escáner: match exacto por SKU (case-insensitive)
+                    const exact = productos.find(p => p.sku && p.sku.toLowerCase() === txt.toLowerCase())
+                    if (exact) {
+                      addToCart(exact)
+                      setQ('')
+                      return
+                    }
+                    // Fallback: primer resultado de la grilla filtrada
+                    if (grilla.length > 0) {
+                      addToCart(grilla[0])
+                      setQ('')
+                      return
+                    }
+                    toast({ kind: 'warning', title: 'Sin coincidencias', message: txt })
+                  }}
+                  placeholder="Buscar o escanear código…"
                   className="pl-9"
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[10px] uppercase tracking-wider text-[var(--text-subtle)]">F2</span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[10px] uppercase tracking-wider text-[var(--text-subtle)]">F2 · ↵</span>
               </div>
               <Select value={filtroCat} onChange={e => setFiltroCat(e.target.value)} className="w-[180px]">
                 <option value="todas">Todas las categorías</option>

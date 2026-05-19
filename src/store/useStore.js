@@ -309,6 +309,79 @@ export const useStore = create(
       },
 
       // ===========================================================
+      // Devolución parcial de venta
+      // ===========================================================
+      devolverItemsVenta: async (venta_id, devoluciones) => {
+        if (supabaseEnabled) {
+          await data.venta.devolverItems(venta_id, devoluciones)
+          const venta = await data.venta.byId(venta_id)
+          const fresh = await data.refreshProductosYCaja()
+          set(s => ({
+            ventas: s.ventas.map(v => v.id === venta_id ? venta : v),
+            productos: fresh.productos,
+            movimientosCaja: fresh.movimientosCaja,
+            personas: fresh.personas,
+          }))
+          return
+        }
+
+        // ----- Local fallback -----
+        const venta = get().ventas.find(v => v.id === venta_id)
+        if (!venta) throw new Error('Venta no encontrada')
+        if (venta.estado !== 'completada') throw new Error('La venta no está completada')
+
+        let monto = 0
+        const itemsNuevos = venta.items.flatMap(it => {
+          const dev = devoluciones.find(d => d.item_id === it.id)
+          if (!dev || !dev.cantidad) return [it]
+          const c = Number(dev.cantidad)
+          if (c <= 0) return [it]
+          if (c > it.cantidad) throw new Error('Cantidad excede el ítem')
+          monto += c * it.precio_unit
+          const restante = it.cantidad - c
+          if (restante === 0) return []
+          return [{ ...it, cantidad: restante, subtotal: restante * it.precio_unit }]
+        })
+        if (monto <= 0) return
+
+        set(s => {
+          const productos = s.productos.map(p => {
+            const back = devoluciones.reduce((sum, d) => {
+              const it = venta.items.find(i => i.id === d.item_id)
+              if (it && it.producto_id === p.id) return sum + Number(d.cantidad)
+              return sum
+            }, 0)
+            return back ? { ...p, stock: (p.stock || 0) + back } : p
+          })
+          const movimientosCaja = [...s.movimientosCaja, {
+            id: nextId(),
+            fecha: new Date().toISOString(),
+            tipo: 'egreso',
+            concepto: `Devolución venta #${venta_id}`,
+            monto,
+            metodo_pago: venta.metodo_pago,
+            venta_id,
+            notas: '',
+          }]
+          let personas = s.personas
+          if (venta.metodo_pago === 'cuenta_corriente' && venta.cliente_id) {
+            personas = personas.map(p =>
+              p.id === venta.cliente_id ? { ...p, saldo: (p.saldo || 0) + monto } : p
+            )
+          }
+          return {
+            ventas: s.ventas.map(v => v.id === venta_id
+              ? { ...v, items: itemsNuevos, subtotal: Math.max(0, v.subtotal - monto), total: Math.max(0, v.total - monto) }
+              : v
+            ),
+            productos,
+            movimientosCaja,
+            personas,
+          }
+        })
+      },
+
+      // ===========================================================
       // Compras
       // ===========================================================
       registrarCompra: async (compra) => {

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { LineChart as LineIcon, FileDown, Calendar, Eye, X, RotateCcw } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { LineChart as LineIcon, FileDown, Calendar, Eye, X, RotateCcw, Undo2 } from 'lucide-react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell } from 'recharts'
 import { useStore } from '@/store/useStore.js'
 import { money, dateTime, isoDay } from '@/lib/format.js'
@@ -20,6 +20,7 @@ export function Reportes() {
   const productos = useStore(s => s.productos)
   const personas = useStore(s => s.personas)
   const anularVenta = useStore(s => s.anularVenta)
+  const devolverItems = useStore(s => s.devolverItemsVenta)
   const toast = useStore(s => s.pushToast)
 
   const today = isoDay()
@@ -32,8 +33,10 @@ export function Reportes() {
   const [detail, setDetail] = useState(null)
 
   const filtradas = useMemo(() => {
-    const start = new Date(desde); start.setHours(0, 0, 0, 0)
-    const end = new Date(hasta); end.setHours(23, 59, 59, 999)
+    const [yD, mD, dD] = desde.split('-').map(Number)
+    const [yH, mH, dH] = hasta.split('-').map(Number)
+    const start = new Date(yD, mD - 1, dD, 0, 0, 0, 0)
+    const end   = new Date(yH, mH - 1, dH, 23, 59, 59, 999)
     return ventas
       .filter(v => {
         const d = new Date(v.fecha)
@@ -260,25 +263,64 @@ export function Reportes() {
             toast({ kind: 'danger', title: 'No se pudo anular', message: e.message })
           }
         }}
+        onDevolver={async (id, devoluciones) => {
+          const total = devoluciones.reduce((s, d) => s + Number(d.cantidad || 0), 0)
+          if (!total) return
+          if (!confirm(`¿Devolver ${total} unidad${total === 1 ? '' : 'es'}? Se repondrá el stock y se asentará el egreso en caja.`)) return
+          try {
+            await devolverItems(id, devoluciones)
+            setDetail(null)
+            toast({ kind: 'success', title: `Devolución registrada` })
+          } catch (e) {
+            toast({ kind: 'danger', title: 'No se pudo devolver', message: e.message })
+          }
+        }}
       />
     </div>
   )
 }
 
-function DetalleVentaModal({ venta, personas, onClose, onAnular }) {
+function DetalleVentaModal({ venta, personas, onClose, onAnular, onDevolver }) {
+  const [devs, setDevs] = useState({})
+
+  useEffect(() => {
+    setDevs({})
+  }, [venta?.id])
+
   if (!venta) return null
   const cliente = personas.find(p => p.id === venta.cliente_id)
+  const editable = venta.estado === 'completada'
+
+  const setDev = (item_id, val, max) => {
+    const n = Math.min(Math.max(0, Number(val) || 0), max)
+    setDevs(prev => ({ ...prev, [item_id]: n }))
+  }
+
+  const devoluciones = Object.entries(devs)
+    .map(([item_id, cantidad]) => ({ item_id: Number(item_id), cantidad: Number(cantidad) }))
+    .filter(d => d.cantidad > 0)
+
+  const totalDevolver = devoluciones.reduce((s, d) => {
+    const it = venta.items.find(i => i.id === d.item_id)
+    return s + (it ? d.cantidad * it.precio_unit : 0)
+  }, 0)
+
   return (
     <Modal
       open={!!venta}
       onClose={onClose}
       title={`Venta #${venta.id}`}
       subtitle={dateTime(venta.fecha)}
-      size="md"
+      size="lg"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cerrar</Button>
-          {venta.estado === 'completada' && (
+          {editable && devoluciones.length > 0 && (
+            <Button variant="outline" onClick={() => onDevolver(venta.id, devoluciones)}>
+              <Undo2 className="size-4" /> Devolver {money(totalDevolver)}
+            </Button>
+          )}
+          {editable && (
             <Button variant="danger" onClick={() => onAnular(venta.id)}>
               <RotateCcw className="size-4" /> Anular venta
             </Button>
@@ -294,15 +336,35 @@ function DetalleVentaModal({ venta, personas, onClose, onAnular }) {
         </div>
         <Table>
           <THead>
-            <TR><TH>Detalle</TH><TH align="right">Cant.</TH><TH align="right">P.U.</TH><TH align="right">Imp.</TH></TR>
+            <TR>
+              <TH>Detalle</TH>
+              <TH align="right">Cant.</TH>
+              <TH align="right">P.U.</TH>
+              <TH align="right">Imp.</TH>
+              {editable && <TH align="right">Devolver</TH>}
+            </TR>
           </THead>
           <tbody>
-            {venta.items.map((it, i) => (
-              <TR key={i}>
+            {venta.items.map((it) => (
+              <TR key={it.id}>
                 <TD>{it.nombre}</TD>
                 <TD align="right" mono>{it.cantidad}</TD>
                 <TD align="right" mono>{money(it.precio_unit)}</TD>
                 <TD align="right" mono>{money(it.subtotal)}</TD>
+                {editable && (
+                  <TD align="right">
+                    <input
+                      type="number"
+                      min="0"
+                      max={it.cantidad}
+                      step="1"
+                      value={devs[it.id] ?? ''}
+                      onChange={e => setDev(it.id, e.target.value, it.cantidad)}
+                      placeholder="0"
+                      className="h-7 w-16 rounded border border-[var(--border)] bg-transparent text-right font-mono text-sm px-2"
+                    />
+                  </TD>
+                )}
               </TR>
             ))}
           </tbody>

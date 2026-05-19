@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react'
-import { Wallet, Plus, ArrowUpRight, ArrowDownRight, FileDown, Calendar } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Wallet, Plus, ArrowUpRight, ArrowDownRight, FileDown, Calendar, Lock, Receipt } from 'lucide-react'
 import { useStore } from '@/store/useStore.js'
-import { money, dateTime, isoDay } from '@/lib/format.js'
+import { money, dateTime, isoDay, dateOnly } from '@/lib/format.js'
 import { cn, downloadText } from '@/lib/utils.js'
+import { cierre as cierreApi } from '@/lib/data.js'
+import { supabaseEnabled } from '@/lib/supabase.js'
 import { SectionHeader } from '@/components/ui/SectionHeader.jsx'
 import { Card, CardBody, CardHeader, StatCard } from '@/components/ui/Card.jsx'
 import { Button } from '@/components/ui/Button.jsx'
@@ -20,6 +22,37 @@ export function Caja() {
   const [filtro, setFiltro] = useState(isoDay())
   const [modo, setModo] = useState('dia') // dia | mes | todo
   const [editing, setEditing] = useState(null)
+  const [cierreOpen, setCierreOpen] = useState(false)
+  const [zPrint, setZPrint] = useState(null)
+  const [cierres, setCierres] = useState([])
+
+  useEffect(() => {
+    if (!supabaseEnabled) return
+    cierreApi.listar(10).then(setCierres).catch(() => {})
+  }, [])
+
+  const resumenHoy = useMemo(() => {
+    const now = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const end = new Date(start); end.setDate(end.getDate() + 1)
+    const hoy = movs.filter(m => {
+      const d = new Date(m.fecha)
+      return d >= start && d < end
+    })
+    const sum = (filtroFn) => hoy.filter(filtroFn).reduce((s, m) => s + m.monto, 0)
+    const efIn = sum(m => m.tipo === 'ingreso' && m.metodo_pago === 'efectivo')
+    const efEg = sum(m => m.tipo === 'egreso'  && m.metodo_pago === 'efectivo')
+    const totIn = sum(m => m.tipo === 'ingreso')
+    const totEg = sum(m => m.tipo === 'egreso')
+    return {
+      efectivo_ingresos: efIn,
+      efectivo_egresos: efEg,
+      efectivo_esperado: efIn - efEg,
+      ingresos: totIn,
+      egresos: totEg,
+      total_esperado: totIn - totEg,
+    }
+  }, [movs])
 
   const filtrados = useMemo(() => {
     const arr = [...movs].sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
@@ -65,6 +98,9 @@ export function Caja() {
           <>
             <Button variant="outline" size="sm" onClick={exportarCSV}>
               <FileDown className="size-4" /> CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setCierreOpen(true)}>
+              <Lock className="size-4" /> Cerrar caja
             </Button>
             <Button variant="outline" size="sm" onClick={() => setEditing({ tipo: 'egreso', concepto: '', monto: 0, metodo_pago: 'efectivo', notas: '' })}>
               <ArrowDownRight className="size-4" /> Gasto
@@ -155,6 +191,51 @@ export function Caja() {
         </Card>
       )}
 
+      {cierres.length > 0 && (
+        <Card>
+          <CardHeader title="Últimos cierres" subtitle={`${cierres.length} arqueos guardados`} />
+          <CardBody className="pt-0">
+            <Table className="rounded-lg">
+              <THead>
+                <TR>
+                  <TH>Día</TH>
+                  <TH align="right">Esperado efectivo</TH>
+                  <TH align="right">Contado</TH>
+                  <TH align="right">Diferencia</TH>
+                  <TH align="right"> </TH>
+                </TR>
+              </THead>
+              <tbody>
+                {cierres.map(c => (
+                  <TR key={c.id}>
+                    <TD>
+                      <p className="text-sm">{dateOnly(c.dia + 'T00:00:00')}</p>
+                      <p className="font-mono text-[11px] text-[var(--text-subtle)]">{dateTime(c.fecha)}</p>
+                    </TD>
+                    <TD align="right" mono>{money(c.efectivo_esperado)}</TD>
+                    <TD align="right" mono>{money(c.efectivo_contado)}</TD>
+                    <TD align="right" mono>
+                      <span className={cn(
+                        c.diferencia === 0 ? 'text-[var(--text-subtle)]'
+                          : c.diferencia > 0 ? 'text-[var(--color-success)]'
+                          : 'text-[var(--color-danger)]'
+                      )}>
+                        {c.diferencia > 0 ? '+ ' : ''}{money(c.diferencia)}
+                      </span>
+                    </TD>
+                    <TD align="right">
+                      <Button variant="ghost" size="icon-sm" onClick={() => setZPrint(c)} aria-label="Ver Z">
+                        <Receipt className="size-3.5" />
+                      </Button>
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          </CardBody>
+        </Card>
+      )}
+
       <MovimientoModal
         open={!!editing}
         value={editing}
@@ -169,7 +250,170 @@ export function Caja() {
           }
         }}
       />
+
+      <CierreModal
+        open={cierreOpen}
+        resumen={resumenHoy}
+        onClose={() => setCierreOpen(false)}
+        onSave={async ({ efectivo_contado, notas }) => {
+          if (!supabaseEnabled) {
+            toast({ kind: 'warning', title: 'Sólo disponible en modo Supabase' })
+            return
+          }
+          try {
+            const nuevo = await cierreApi.cerrar({ efectivo_contado, notas })
+            setCierreOpen(false)
+            setZPrint(nuevo)
+            cierreApi.listar(10).then(setCierres).catch(() => {})
+            toast({ kind: 'success', title: 'Caja cerrada' })
+          } catch (e) {
+            toast({ kind: 'danger', title: 'No se pudo cerrar', message: e.message })
+          }
+        }}
+      />
+
+      <ZTicketModal cierre={zPrint} onClose={() => setZPrint(null)} />
     </div>
+  )
+}
+
+function CierreModal({ open, resumen, onClose, onSave }) {
+  const [contado, setContado] = useState('')
+  const [notas, setNotas] = useState('')
+
+  useEffect(() => {
+    if (open) { setContado(''); setNotas('') }
+  }, [open])
+
+  if (!open) return null
+  const contadoNum = Number(contado) || 0
+  const diferencia = contadoNum - resumen.efectivo_esperado
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Cerrar caja del día"
+      subtitle={dateTime(new Date())}
+      size="md"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button variant="primary" disabled={contado === ''} onClick={() => onSave({ efectivo_contado: contadoNum, notas })}>
+            <Lock className="size-4" /> Confirmar cierre
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Card><CardBody className="px-4 py-3">
+            <p className="text-[10px] uppercase tracking-wider text-[var(--text-subtle)]">Ingresos efectivo</p>
+            <p className="font-mono mt-1 text-lg text-[var(--color-success)]">{money(resumen.efectivo_ingresos)}</p>
+          </CardBody></Card>
+          <Card><CardBody className="px-4 py-3">
+            <p className="text-[10px] uppercase tracking-wider text-[var(--text-subtle)]">Egresos efectivo</p>
+            <p className="font-mono mt-1 text-lg text-[var(--color-warning)]">{money(resumen.efectivo_egresos)}</p>
+          </CardBody></Card>
+        </div>
+        <Card><CardBody className="px-4 py-3">
+          <p className="text-[10px] uppercase tracking-wider text-[var(--text-subtle)]">Efectivo esperado en caja</p>
+          <p className="display mt-1 text-3xl text-[var(--accent-text)]">{money(resumen.efectivo_esperado)}</p>
+          <p className="mt-1 text-xs text-[var(--text-subtle)]">Sólo movimientos en efectivo del día.</p>
+        </CardBody></Card>
+        <Field label="Efectivo contado físicamente" hint="ARS">
+          <Input type="number" min="0" step="0.01" value={contado} onChange={e => setContado(e.target.value)} className="font-mono" autoFocus />
+        </Field>
+        {contado !== '' && (
+          <div className="flex items-center justify-between rounded-lg border border-dashed border-[var(--border)] px-4 py-3">
+            <span className="text-sm text-[var(--text-subtle)]">Diferencia</span>
+            <span className={cn(
+              'display text-2xl',
+              diferencia === 0 ? 'text-[var(--text)]'
+                : diferencia > 0 ? 'text-[var(--color-success)]'
+                : 'text-[var(--color-danger)]'
+            )}>
+              {diferencia > 0 ? '+ ' : ''}{money(diferencia)}
+            </span>
+          </div>
+        )}
+        <Field label="Notas" hint="opcional">
+          <Textarea value={notas} onChange={e => setNotas(e.target.value)} placeholder="Observaciones del cierre…" />
+        </Field>
+      </div>
+    </Modal>
+  )
+}
+
+function ZTicketModal({ cierre, onClose }) {
+  if (!cierre) return null
+  return (
+    <Modal
+      open={!!cierre}
+      onClose={onClose}
+      title={`Cierre Z #${cierre.id}`}
+      subtitle={dateOnly((cierre.dia || '') + 'T00:00:00')}
+      size="sm"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cerrar</Button>
+          <Button variant="primary" onClick={() => window.print()}>
+            <Receipt className="size-4" /> Imprimir
+          </Button>
+        </>
+      }
+    >
+      <div className="print-ticket print:bg-white print:text-black">
+        <div className="flex flex-col items-center gap-1 border-b border-dashed border-[var(--border)] pb-3 text-center">
+          <p className="display text-xl">AGM <span className="italic">system</span></p>
+          <p className="font-mono text-[11px] text-[var(--text-subtle)]">Cierre Z · no fiscal</p>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+          <span className="text-[var(--text-subtle)]">Día</span>
+          <span className="text-right font-mono">{dateOnly((cierre.dia || '') + 'T00:00:00')}</span>
+          <span className="text-[var(--text-subtle)]">Hora</span>
+          <span className="text-right font-mono">{dateTime(cierre.fecha)}</span>
+        </div>
+        <table className="mt-4 w-full text-xs">
+          <tbody>
+            <tr className="border-t border-dashed border-[var(--border)]">
+              <td className="py-1.5 text-[var(--text-subtle)]">Ingresos totales</td>
+              <td className="py-1.5 text-right font-mono">{money(cierre.ingresos)}</td>
+            </tr>
+            <tr className="border-t border-dashed border-[var(--border)]">
+              <td className="py-1.5 text-[var(--text-subtle)]">Egresos totales</td>
+              <td className="py-1.5 text-right font-mono">- {money(cierre.egresos)}</td>
+            </tr>
+            <tr className="border-t border-dashed border-[var(--border)]">
+              <td className="py-1.5 text-[var(--text-subtle)]">Saldo del día</td>
+              <td className="py-1.5 text-right font-mono">{money(cierre.total_esperado)}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div className="mt-4 border-t border-dashed border-[var(--border)] pt-3 text-sm">
+          <div className="flex justify-between font-mono text-xs">
+            <span className="text-[var(--text-subtle)]">Efectivo esperado</span>
+            <span>{money(cierre.efectivo_esperado)}</span>
+          </div>
+          <div className="flex justify-between font-mono text-xs">
+            <span className="text-[var(--text-subtle)]">Efectivo contado</span>
+            <span>{money(cierre.efectivo_contado)}</span>
+          </div>
+          <div className="mt-2 flex items-baseline justify-between">
+            <span className="text-[var(--text-subtle)]">Diferencia</span>
+            <span className={cn(
+              'display text-2xl',
+              cierre.diferencia === 0 ? '' : cierre.diferencia > 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'
+            )}>
+              {cierre.diferencia > 0 ? '+ ' : ''}{money(cierre.diferencia)}
+            </span>
+          </div>
+        </div>
+        {cierre.notas && (
+          <p className="mt-4 border-t border-dashed border-[var(--border)] pt-3 text-xs text-[var(--text-muted)]">{cierre.notas}</p>
+        )}
+      </div>
+    </Modal>
   )
 }
 
