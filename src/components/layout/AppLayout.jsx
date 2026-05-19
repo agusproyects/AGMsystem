@@ -32,7 +32,7 @@ export function AppLayout() {
       // G + número → ir a sección
       if (e.key.toLowerCase() === 'g') {
         const handler = (ev) => {
-          const map = { 1: '/', 2: '/ventas', 3: '/productos', 4: '/clientes', 5: '/proveedores', 6: '/caja', 7: '/reportes', 8: '/ajustes' }
+          const map = { 1: '/', 2: '/ventas', 3: '/compras', 4: '/productos', 5: '/clientes', 6: '/proveedores', 7: '/caja', 8: '/reportes', 9: '/ajustes' }
           if (map[ev.key]) { navigate(map[ev.key]); }
           window.removeEventListener('keydown', handler, true)
         }

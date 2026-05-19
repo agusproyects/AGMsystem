@@ -66,6 +66,9 @@ export function Caja() {
             <Button variant="outline" size="sm" onClick={exportarCSV}>
               <FileDown className="size-4" /> CSV
             </Button>
+            <Button variant="outline" size="sm" onClick={() => setEditing({ tipo: 'egreso', concepto: '', monto: 0, metodo_pago: 'efectivo', notas: '' })}>
+              <ArrowDownRight className="size-4" /> Gasto
+            </Button>
             <Button variant="primary" size="sm" onClick={() => setEditing({ tipo: 'ingreso', concepto: '', monto: 0, metodo_pago: 'efectivo', notas: '' })}>
               <Plus className="size-4" /> Movimiento
             </Button>

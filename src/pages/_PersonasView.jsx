@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Users, Truck, Plus, Search, Pencil, Trash2, Phone, Mail, MapPin, History, ArrowDownUp } from 'lucide-react'
+import { Users, Truck, Plus, Search, Pencil, Trash2, Phone, Mail, MapPin, History, ArrowDownUp, Wallet, Banknote, CreditCard, ArrowRight, Sparkles } from 'lucide-react'
 import Fuse from 'fuse.js'
 import { useStore } from '@/store/useStore.js'
 import { useShallow } from 'zustand/react/shallow'
@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils.js'
 import { SectionHeader } from '@/components/ui/SectionHeader.jsx'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card.jsx'
 import { Button } from '@/components/ui/Button.jsx'
-import { Field, Input, Textarea } from '@/components/ui/Field.jsx'
+import { Field, Input, Select, Textarea } from '@/components/ui/Field.jsx'
 import { Badge } from '@/components/ui/Badge.jsx'
 import { Table, THead, TR, TH, TD } from '@/components/ui/Table.jsx'
 import { Modal } from '@/components/ui/Modal.jsx'
@@ -130,7 +130,7 @@ export function PersonasView({ tipo }) {
               <TH><SortBtn label="Nombre" k="nombre" sort={sort} onClick={(k) => setSort(s => s.key === k ? { key: k, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: 'asc' })} /></TH>
               <TH>Documento</TH>
               <TH>Contacto</TH>
-              {tipo === 'cliente' && <TH align="right">Saldo</TH>}
+              <TH align="right">Saldo</TH>
               <TH align="right"> </TH>
             </TR>
           </THead>
@@ -151,13 +151,9 @@ export function PersonasView({ tipo }) {
                     {!p.telefono && !p.email && <span className="text-[var(--text-subtle)]">—</span>}
                   </div>
                 </TD>
-                {tipo === 'cliente' && (
-                  <TD align="right" mono>
-                    {p.saldo === 0 ? <span className="text-[var(--text-subtle)]">{money(0)}</span> :
-                     p.saldo < 0 ? <span className="text-[var(--color-warning)]">{money(p.saldo)}</span> :
-                                   <span className="text-[var(--color-success)]">+ {money(p.saldo)}</span>}
-                  </TD>
-                )}
+                <TD align="right" mono>
+                  <SaldoCell tipo={tipo} saldo={p.saldo} />
+                </TD>
                 <TD align="right">
                   <div className="inline-flex gap-1">
                     <Button variant="ghost" size="icon-sm" onClick={() => setEditing(p)} aria-label="Editar"><Pencil className="size-3.5" /></Button>
@@ -178,8 +174,25 @@ export function PersonasView({ tipo }) {
         onSave={guardar}
       />
 
-      <DetalleModal persona={detail} ventas={ventas} onClose={() => setDetail(null)} onEdit={() => { setEditing(detail); setDetail(null) }} />
+      <DetalleModal
+        persona={detail}
+        ventas={ventas}
+        onClose={() => setDetail(null)}
+        onEdit={() => { setEditing(detail); setDetail(null) }}
+      />
     </div>
+  )
+}
+
+function SaldoCell({ tipo, saldo }) {
+  if (!saldo) return <span className="text-[var(--text-subtle)]">{money(0)}</span>
+  // Cliente: saldo < 0 = nos debe (warning). saldo > 0 = a favor (success).
+  // Proveedor: saldo > 0 = le debemos (warning). saldo < 0 = a favor (success).
+  const debe = tipo === 'cliente' ? saldo < 0 : saldo > 0
+  return (
+    <span className={debe ? 'text-[var(--color-warning)]' : 'text-[var(--color-success)]'}>
+      {saldo > 0 ? '+ ' : ''}{money(saldo)}
+    </span>
   )
 }
 
@@ -244,12 +257,25 @@ function PersonaForm({ open, value, tipo, onClose, onSave }) {
 }
 
 function DetalleModal({ persona, ventas, onClose, onEdit }) {
+  const registrarPago = useStore(s => s.registrarPagoPersona)
+  const toast = useStore(s => s.pushToast)
+  const [pagoOpen, setPagoOpen] = useState(false)
+
   if (!persona) return null
   const historial = ventas
     .filter(v => v.cliente_id === persona.id)
     .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
 
   const total = historial.reduce((s, v) => s + v.total, 0)
+
+  // Etiqueta del saldo según contexto:
+  // Cliente saldo < 0 = nos debe. > 0 = a favor.
+  // Proveedor saldo > 0 = le debemos. < 0 = a favor.
+  const debe = persona.tipo === 'cliente' ? persona.saldo < 0 : persona.saldo > 0
+  const aFavor = persona.tipo === 'cliente' ? persona.saldo > 0 : persona.saldo < 0
+  const saldoLabel = persona.tipo === 'cliente'
+    ? (debe ? 'nos debe' : aFavor ? 'a favor' : 'sin saldo')
+    : (debe ? 'le debemos' : aFavor ? 'a favor' : 'sin saldo')
 
   return (
     <Modal
@@ -261,6 +287,9 @@ function DetalleModal({ persona, ventas, onClose, onEdit }) {
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cerrar</Button>
+          <Button variant="outline" onClick={() => setPagoOpen(true)}>
+            <Wallet className="size-4" /> Registrar pago
+          </Button>
           <Button variant="primary" onClick={onEdit}><Pencil className="size-4" /> Editar</Button>
         </>
       }
@@ -271,24 +300,35 @@ function DetalleModal({ persona, ventas, onClose, onEdit }) {
         <InfoCard icon={MapPin} label="Dirección" value={persona.direccion || '—'} />
       </div>
 
-      {persona.tipo === 'cliente' && (
-        <div className="mt-5 grid grid-cols-3 gap-4">
-          <Card><CardBody className="px-4 py-3">
-            <p className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">Saldo</p>
-            <p className={cn('display mt-1 text-2xl', persona.saldo < 0 && 'text-[var(--color-warning)]', persona.saldo > 0 && 'text-[var(--color-success)]')}>
-              {money(persona.saldo)}
-            </p>
+      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Card><CardBody className="px-4 py-3">
+          <p className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">Saldo · {saldoLabel}</p>
+          <p className={cn(
+            'display mt-1 text-2xl',
+            debe && 'text-[var(--color-warning)]',
+            aFavor && 'text-[var(--color-success)]',
+          )}>
+            {money(persona.saldo)}
+          </p>
+        </CardBody></Card>
+        {persona.tipo === 'cliente' ? (
+          <>
+            <Card><CardBody className="px-4 py-3">
+              <p className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">Compras</p>
+              <p className="display mt-1 text-2xl">{historial.length}</p>
+            </CardBody></Card>
+            <Card><CardBody className="px-4 py-3">
+              <p className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">Facturado</p>
+              <p className="display mt-1 text-2xl text-[var(--accent-text)]">{money(total)}</p>
+            </CardBody></Card>
+          </>
+        ) : (
+          <Card className="sm:col-span-2"><CardBody className="px-4 py-3 text-xs text-[var(--text-muted)]">
+            <p>Para sumar saldo a un proveedor registrá una compra en <span className="font-mono">/compras</span> con método "Cta. Corriente".</p>
+            <p className="mt-1 text-[var(--text-subtle)]">Para cancelar deuda, usá "Registrar pago".</p>
           </CardBody></Card>
-          <Card><CardBody className="px-4 py-3">
-            <p className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">Compras</p>
-            <p className="display mt-1 text-2xl">{historial.length}</p>
-          </CardBody></Card>
-          <Card><CardBody className="px-4 py-3">
-            <p className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">Facturado</p>
-            <p className="display mt-1 text-2xl text-[var(--accent-text)]">{money(total)}</p>
-          </CardBody></Card>
-        </div>
-      )}
+        )}
+      </div>
 
       {persona.notas && (
         <Card className="mt-5"><CardBody className="px-4 py-3 text-sm text-[var(--text-muted)]">{persona.notas}</CardBody></Card>
@@ -317,6 +357,106 @@ function DetalleModal({ persona, ventas, onClose, onEdit }) {
           </CardBody>
         </Card>
       )}
+
+      <PagoModal
+        open={pagoOpen}
+        persona={persona}
+        onClose={() => setPagoOpen(false)}
+        onSave={async ({ monto, metodo_pago, notas }) => {
+          try {
+            await registrarPago({ persona_id: persona.id, monto, metodo_pago, notas })
+            setPagoOpen(false)
+            toast({
+              kind: 'success',
+              title: `Pago ${persona.tipo === 'cliente' ? 'recibido' : 'realizado'}`,
+              message: money(Number(monto)),
+            })
+          } catch (e) {
+            toast({ kind: 'danger', title: 'No se pudo registrar el pago', message: e.message })
+          }
+        }}
+      />
+    </Modal>
+  )
+}
+
+function PagoModal({ open, persona, onClose, onSave }) {
+  const [monto, setMonto] = useState('')
+  const [metodo, setMetodo] = useState('efectivo')
+  const [notas, setNotas] = useState('')
+
+  useEffect(() => {
+    if (open) {
+      // pre-fill with deuda si la hay, en valor absoluto
+      const sugerido = persona
+        ? (persona.tipo === 'cliente'
+            ? (persona.saldo < 0 ? Math.abs(persona.saldo) : '')
+            : (persona.saldo > 0 ? persona.saldo : ''))
+        : ''
+      setMonto(sugerido || '')
+      setMetodo('efectivo')
+      setNotas('')
+    }
+  }, [open, persona])
+
+  if (!open || !persona) return null
+  const titulo = persona.tipo === 'cliente' ? 'Cobrar a cliente' : 'Pagar a proveedor'
+  const opciones = [
+    { id: 'efectivo',      label: 'Efectivo',      icon: Banknote },
+    { id: 'tarjeta',       label: 'Tarjeta',       icon: CreditCard },
+    { id: 'transferencia', label: 'Transferencia', icon: ArrowRight },
+    { id: 'mp',            label: 'Mercado Pago',  icon: Sparkles },
+  ]
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={titulo}
+      subtitle={persona.nombre}
+      size="md"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button
+            variant="primary"
+            disabled={!(Number(monto) > 0)}
+            onClick={() => onSave({ monto: Number(monto), metodo_pago: metodo, notas })}
+          >
+            <Wallet className="size-4" /> Registrar
+          </Button>
+        </>
+      }
+    >
+      <div className="grid grid-cols-1 gap-4">
+        <Field label="Monto" hint="ARS">
+          <Input type="number" min="0" step="0.01" value={monto} onChange={e => setMonto(e.target.value)} className="font-mono" autoFocus />
+        </Field>
+        <Field label="Método">
+          <div className="grid grid-cols-4 gap-1.5">
+            {opciones.map(o => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => setMetodo(o.id)}
+                title={o.label}
+                className={cn(
+                  'flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-[10px] uppercase tracking-wide transition-colors',
+                  metodo === o.id
+                    ? 'border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_15%,transparent)] text-[var(--text)]'
+                    : 'border-[var(--border)] text-[var(--text-subtle)] hover:border-[var(--border-strong)]'
+                )}
+              >
+                <o.icon className="size-4" />
+                <span className="truncate w-full text-center">{o.label.split(' ')[0]}</span>
+              </button>
+            ))}
+          </div>
+        </Field>
+        <Field label="Notas" hint="opcional">
+          <Textarea value={notas} onChange={e => setNotas(e.target.value)} placeholder="Nº de recibo, detalles…" />
+        </Field>
+      </div>
     </Modal>
   )
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Search, ShoppingCart, X, Plus, Minus, User, Banknote, CreditCard, ArrowRight,
-  Trash2, Receipt, Wallet, Percent, Sparkles,
+  Search, Truck, X, Plus, Minus, Banknote, CreditCard, ArrowRight, ArrowDownRight,
+  Trash2, Receipt, Sparkles, Package, User,
 } from 'lucide-react'
 import Fuse from 'fuse.js'
 import { useStore } from '@/store/useStore.js'
@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils.js'
 import { SectionHeader } from '@/components/ui/SectionHeader.jsx'
 import { Card, CardBody } from '@/components/ui/Card.jsx'
 import { Button } from '@/components/ui/Button.jsx'
-import { Field, Input, Select } from '@/components/ui/Field.jsx'
+import { Field, Input, Select, Textarea } from '@/components/ui/Field.jsx'
 import { Badge } from '@/components/ui/Badge.jsx'
 import { Modal } from '@/components/ui/Modal.jsx'
 import { EmptyState } from '@/components/ui/EmptyState.jsx'
@@ -23,26 +23,21 @@ const PAGOS = [
   { id: 'cuenta_corriente', label: 'Cta. Corriente', icon: User },
 ]
 
-export function Ventas() {
+export function Compras() {
   const productos = useStore(s => s.productos)
   const personas  = useStore(s => s.personas)
-  const categorias = useStore(s => s.categorias)
-  const registrarVenta = useStore(s => s.registrarVenta)
+  const registrarCompra = useStore(s => s.registrarCompra)
   const toast = useStore(s => s.pushToast)
 
-  const clientes = personas.filter(p => p.tipo === 'cliente')
+  const proveedores = personas.filter(p => p.tipo === 'proveedor')
   const [q, setQ] = useState('')
-  const [filtroCat, setFiltroCat] = useState('todas')
   const [cart, setCart] = useState([])
-  const [clienteId, setClienteId] = useState(null)
+  const [proveedorId, setProveedorId] = useState(null)
   const [metodo, setMetodo] = useState('efectivo')
-  const [descuento, setDescuento] = useState(0)
-  const [descuentoTipo, setDescuentoTipo] = useState('ars') // 'ars' | 'pct'
   const [notas, setNotas] = useState('')
-  const [ticket, setTicket] = useState(null)
+  const [ultimaCompra, setUltimaCompra] = useState(null)
   const searchRef = useRef(null)
 
-  // Atajos
   useEffect(() => {
     const onKey = (e) => {
       const inField = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName) || e.target?.isContentEditable
@@ -53,29 +48,19 @@ export function Ventas() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const fuse = useMemo(() => new Fuse(productos.filter(p => p.activo), {
+  const fuse = useMemo(() => new Fuse(productos, {
     threshold: 0.33,
     keys: ['nombre', 'sku'],
   }), [productos])
 
   const grilla = useMemo(() => {
-    let arr = q.trim() ? fuse.search(q).map(r => r.item) : productos.filter(p => p.activo)
-    if (filtroCat !== 'todas') arr = arr.filter(p => String(p.categoria_id) === String(filtroCat))
+    const arr = q.trim() ? fuse.search(q).map(r => r.item) : productos
     return arr.slice(0, 36)
-  }, [q, fuse, productos, filtroCat])
+  }, [q, fuse, productos])
 
-  const subtotal = cart.reduce((s, it) => s + it.cantidad * it.precio_unit, 0)
-  const descuentoARS = descuentoTipo === 'pct'
-    ? Math.min(subtotal, Math.max(0, subtotal * (Number(descuento) || 0) / 100))
-    : Math.max(0, Number(descuento) || 0)
-  const total = Math.max(0, subtotal - descuentoARS)
+  const total = cart.reduce((s, it) => s + it.cantidad * it.precio_unit, 0)
 
   const addToCart = (producto) => {
-    if (!producto.activo) return
-    if (producto.stock <= 0 && producto.unidad !== 'srv') {
-      toast({ kind: 'warning', title: 'Sin stock', message: producto.nombre })
-      return
-    }
     setCart(prev => {
       const ex = prev.find(it => it.producto_id === producto.id)
       if (ex) {
@@ -85,8 +70,7 @@ export function Ventas() {
         producto_id: producto.id,
         nombre: producto.nombre,
         cantidad: 1,
-        precio_unit: producto.precio,
-        stock: producto.stock,
+        precio_unit: producto.costo || 0,
         unidad: producto.unidad,
       }]
     })
@@ -106,13 +90,16 @@ export function Ventas() {
     setCart(prev => prev.flatMap(it => it.producto_id === pid ? (n === 0 ? [] : [{ ...it, cantidad: n }]) : [it]))
   }
 
+  const setPrecio = (pid, val) => {
+    const n = Math.max(0, Number(val) || 0)
+    setCart(prev => prev.map(it => it.producto_id === pid ? { ...it, precio_unit: n } : it))
+  }
+
   const removeItem = (pid) => setCart(prev => prev.filter(it => it.producto_id !== pid))
 
-  const resetVenta = () => {
+  const reset = () => {
     setCart([])
-    setClienteId(null)
-    setDescuento(0)
-    setDescuentoTipo('ars')
+    setProveedorId(null)
     setNotas('')
     setMetodo('efectivo')
   }
@@ -120,29 +107,28 @@ export function Ventas() {
   const [submitting, setSubmitting] = useState(false)
   const confirmar = async () => {
     if (cart.length === 0 || submitting) return
-    if (metodo === 'cuenta_corriente' && !clienteId) {
-      toast({ kind: 'warning', title: 'Falta cliente', message: 'Para cuenta corriente seleccioná un cliente.' })
+    if (metodo === 'cuenta_corriente' && !proveedorId) {
+      toast({ kind: 'warning', title: 'Falta proveedor', message: 'Para cuenta corriente seleccioná un proveedor.' })
       return
     }
     setSubmitting(true)
     try {
-      const reg = await registrarVenta({
-        cliente_id: clienteId,
+      const reg = await registrarCompra({
+        proveedor_id: proveedorId,
         items: cart.map(it => ({
           producto_id: it.producto_id,
           nombre: it.nombre,
           cantidad: it.cantidad,
           precio_unit: it.precio_unit,
         })),
-        descuento: Number(descuentoARS.toFixed(2)) || 0,
         metodo_pago: metodo,
         notas,
       })
-      setTicket({ ...reg, clienteNombre: clientes.find(c => c.id === clienteId)?.nombre })
-      resetVenta()
-      toast({ kind: 'success', title: `Venta #${reg.id} registrada`, message: money(reg.total) })
+      setUltimaCompra({ ...reg, proveedorNombre: proveedores.find(p => p.id === proveedorId)?.nombre })
+      reset()
+      toast({ kind: 'success', title: `Compra #${reg.id} registrada`, message: money(reg.total) })
     } catch (e) {
-      toast({ kind: 'danger', title: 'No se pudo registrar la venta', message: e.message })
+      toast({ kind: 'danger', title: 'No se pudo registrar la compra', message: e.message })
     } finally {
       setSubmitting(false)
     }
@@ -151,9 +137,9 @@ export function Ventas() {
   return (
     <div className="flex flex-col gap-6">
       <SectionHeader
-        eyebrow="Punto de venta"
-        title="Ventas"
-        description="Sumá productos, cobrá y emitir ticket. Atajos: B busca, F2 enfoca búsqueda."
+        eyebrow="Compras"
+        title="Compras a proveedores"
+        description="Sumá productos, registrá el egreso y actualizá el stock. Atajos: B busca, F2 enfoca búsqueda."
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_400px]">
@@ -172,15 +158,11 @@ export function Ventas() {
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[10px] uppercase tracking-wider text-[var(--text-subtle)]">F2</span>
               </div>
-              <Select value={filtroCat} onChange={e => setFiltroCat(e.target.value)} className="w-[180px]">
-                <option value="todas">Todas las categorías</option>
-                {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-              </Select>
             </CardBody>
           </Card>
 
           {grilla.length === 0 ? (
-            <EmptyState icon={Search} title="Sin coincidencias" hint="Probá otro término o ajustá el filtro." />
+            <EmptyState icon={Package} title="Sin productos" hint="Cargá productos en /productos para poder comprar." />
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
               {grilla.map(p => (
@@ -190,16 +172,16 @@ export function Ventas() {
           )}
         </div>
 
-        {/* DERECHA: carrito */}
+        {/* DERECHA: lista */}
         <Card className="flex h-fit flex-col lg:sticky lg:top-20">
           <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
             <div className="flex items-center gap-2">
-              <ShoppingCart className="size-4 text-[var(--accent-text)]" />
-              <h3 className="text-sm font-medium">Carrito</h3>
+              <Truck className="size-4 text-[var(--accent-text)]" />
+              <h3 className="text-sm font-medium">Compra</h3>
               <Badge tone="neutral">{cart.length}</Badge>
             </div>
             {cart.length > 0 && (
-              <Button variant="ghost" size="xs" onClick={resetVenta}>
+              <Button variant="ghost" size="xs" onClick={reset}>
                 <Trash2 className="size-3.5" /> Vaciar
               </Button>
             )}
@@ -216,7 +198,15 @@ export function Ventas() {
                 <li key={it.producto_id} className="grid grid-cols-[1fr_auto] gap-2 rounded-md px-2 py-2 hover:bg-[color-mix(in_oklab,var(--text)_4%,transparent)]">
                   <div className="min-w-0">
                     <p className="truncate text-sm">{it.nombre}</p>
-                    <p className="font-mono text-[11px] text-[var(--text-subtle)]">{money(it.precio_unit)} · {it.unidad}</p>
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className="font-mono text-[10px] text-[var(--text-subtle)]">$</span>
+                      <input
+                        value={it.precio_unit}
+                        onChange={e => setPrecio(it.producto_id, e.target.value)}
+                        className="h-6 w-20 rounded border border-[var(--border)] bg-transparent px-1 font-mono text-[11px]"
+                      />
+                      <span className="font-mono text-[10px] text-[var(--text-subtle)]">· {it.unidad}</span>
+                    </div>
                   </div>
                   <div className="flex items-center gap-1">
                     <Button variant="ghost" size="icon-sm" onClick={() => updateQty(it.producto_id, -1)} aria-label="Menos">
@@ -242,12 +232,11 @@ export function Ventas() {
             </ul>
           )}
 
-          {/* Cliente + método de pago + total */}
           <div className="flex flex-col gap-3 border-t border-[var(--border)] px-5 py-4">
-            <Field label="Cliente" hint="opcional">
-              <Select value={clienteId || ''} onChange={e => setClienteId(e.target.value ? Number(e.target.value) : null)}>
-                <option value="">Consumidor final</option>
-                {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            <Field label="Proveedor" hint="opcional">
+              <Select value={proveedorId || ''} onChange={e => setProveedorId(e.target.value ? Number(e.target.value) : null)}>
+                <option value="">Sin proveedor asociado</option>
+                {proveedores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
               </Select>
             </Field>
 
@@ -272,47 +261,14 @@ export function Ventas() {
               </div>
             </Field>
 
-            <Field label="Descuento" hint={descuentoTipo === 'pct' ? '%' : 'ARS'}>
-              <div className="flex gap-1.5">
-                <div className="relative flex-1">
-                  <Percent className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--text-subtle)]" />
-                  <Input
-                    type="number"
-                    min="0"
-                    max={descuentoTipo === 'pct' ? 100 : undefined}
-                    step="0.01"
-                    value={descuento}
-                    onChange={e => setDescuento(e.target.value)}
-                    className="pl-9 font-mono"
-                  />
-                </div>
-                <div className="inline-flex overflow-hidden rounded-md border border-[var(--border)]">
-                  {['ars', 'pct'].map(t => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setDescuentoTipo(t)}
-                      className={cn(
-                        'px-3 text-xs font-mono uppercase tracking-wider transition-colors',
-                        descuentoTipo === t
-                          ? 'bg-[var(--accent)] !text-black font-black'
-                          : 'text-[var(--text-subtle)] hover:text-[var(--text-muted)]'
-                      )}
-                    >
-                      {t === 'ars' ? '$' : '%'}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            <Field label="Notas" hint="opcional">
+              <Textarea value={notas} onChange={e => setNotas(e.target.value)} placeholder="Nº de remito, detalles…" />
             </Field>
 
             <div className="flex items-end justify-between gap-3 border-t border-dashed border-[var(--border)] pt-3">
               <div>
-                <p className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">A cobrar</p>
-                <p className="font-mono text-xs text-[var(--text-muted)]">
-                  Subtotal {money(subtotal)}
-                  {descuentoARS > 0 && <> · desc. {money(descuentoARS)}</>}
-                </p>
+                <p className="text-[11px] uppercase tracking-wider text-[var(--text-subtle)]">A pagar</p>
+                <p className="font-mono text-xs text-[var(--text-muted)]">{cart.length} ítem{cart.length === 1 ? '' : 's'}</p>
               </div>
               <p className="display text-4xl text-[var(--accent-text)]">{money(total)}</p>
             </div>
@@ -324,54 +280,47 @@ export function Ventas() {
               onClick={confirmar}
               className="mt-1 w-full"
             >
-              <Wallet className="size-4" />
-              {submitting ? 'Registrando…' : 'Confirmar venta'}
+              <ArrowDownRight className="size-4" />
+              {submitting ? 'Registrando…' : 'Confirmar compra'}
             </Button>
           </div>
         </Card>
       </div>
 
-      <TicketModal ticket={ticket} onClose={() => setTicket(null)} clientes={clientes} />
+      <CompraModal compra={ultimaCompra} onClose={() => setUltimaCompra(null)} proveedores={proveedores} />
     </div>
   )
 }
 
 function ProductoTile({ p, onClick }) {
-  const sinStock = p.stock <= 0 && p.unidad !== 'srv'
-  const bajo = p.stock <= p.stock_minimo && !sinStock
   return (
     <button
       onClick={onClick}
-      disabled={sinStock}
       className={cn(
         'group relative flex h-full flex-col items-start gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-card)]/70 p-3 text-left transition-all',
         'hover:border-[var(--accent)] hover:-translate-y-[1px] hover:shadow-[0_8px_20px_-12px_color-mix(in_oklab,var(--accent)_60%,transparent)]',
-        'disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:border-[var(--border)]',
       )}
     >
       <p className="line-clamp-2 text-sm leading-tight">{p.nombre}</p>
       <p className="font-mono text-[10px] text-[var(--text-subtle)]">{p.sku || '—'}</p>
       <div className="mt-auto flex w-full items-end justify-between">
-        <span className={cn('text-[10px] uppercase tracking-wider',
-          sinStock ? 'text-[var(--color-danger)]' : bajo ? 'text-[var(--color-warning)]' : 'text-[var(--text-subtle)]'
-        )}>
-          {sinStock ? 'sin stock' : `${p.stock} ${p.unidad}`}
+        <span className="text-[10px] uppercase tracking-wider text-[var(--text-subtle)]">
+          stock {p.stock} {p.unidad}
         </span>
-        <span className="display text-xl">{money(p.precio)}</span>
+        <span className="display text-xl">{money(p.costo || 0)}</span>
       </div>
     </button>
   )
 }
 
-function TicketModal({ ticket, onClose, clientes }) {
-  if (!ticket) return null
-  const subtotal = ticket.items.reduce((s, it) => s + it.subtotal, 0)
+function CompraModal({ compra, onClose, proveedores }) {
+  if (!compra) return null
   return (
     <Modal
-      open={!!ticket}
+      open={!!compra}
       onClose={onClose}
-      title={`Ticket #${ticket.id}`}
-      subtitle={dateTime(ticket.fecha)}
+      title={`Compra #${compra.id}`}
+      subtitle={dateTime(compra.fecha)}
       size="sm"
       footer={
         <>
@@ -384,18 +333,18 @@ function TicketModal({ ticket, onClose, clientes }) {
     >
       <div className="print-ticket print:bg-white print:text-black">
         <div className="flex flex-col items-center gap-1 border-b border-dashed border-[var(--border)] pb-3 text-center">
-          <p className="display text-xl">AGM <span className="italic">system</span></p>
-          <p className="font-mono text-[11px] text-[var(--text-subtle)]">Comprobante no fiscal</p>
+          <p className="display text-xl">Comprobante de compra</p>
+          <p className="font-mono text-[11px] text-[var(--text-subtle)]">no fiscal</p>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
           <span className="text-[var(--text-subtle)]">Fecha</span>
-          <span className="text-right font-mono">{dateTime(ticket.fecha)}</span>
+          <span className="text-right font-mono">{dateTime(compra.fecha)}</span>
           <span className="text-[var(--text-subtle)]">Método</span>
-          <span className="text-right">{ticket.metodo_pago.replace('_', ' ')}</span>
-          {ticket.cliente_id && (
+          <span className="text-right">{compra.metodo_pago.replace('_', ' ')}</span>
+          {compra.proveedor_id && (
             <>
-              <span className="text-[var(--text-subtle)]">Cliente</span>
-              <span className="text-right">{ticket.clienteNombre || clientes.find(c => c.id === ticket.cliente_id)?.nombre || '—'}</span>
+              <span className="text-[var(--text-subtle)]">Proveedor</span>
+              <span className="text-right">{compra.proveedorNombre || proveedores.find(p => p.id === compra.proveedor_id)?.nombre || '—'}</span>
             </>
           )}
         </div>
@@ -409,7 +358,7 @@ function TicketModal({ ticket, onClose, clientes }) {
             </tr>
           </thead>
           <tbody>
-            {ticket.items.map((it, i) => (
+            {compra.items.map((it, i) => (
               <tr key={i} className="border-t border-dashed border-[var(--border)]">
                 <td className="py-1.5">{it.nombre}</td>
                 <td className="py-1.5 text-right font-mono">{it.cantidad}</td>
@@ -420,24 +369,12 @@ function TicketModal({ ticket, onClose, clientes }) {
           </tbody>
         </table>
         <div className="mt-3 border-t border-dashed border-[var(--border)] pt-3 text-sm">
-          <Row label="Subtotal" value={money(subtotal)} />
-          {ticket.descuento > 0 && <Row label="Descuento" value={`- ${money(ticket.descuento)}`} />}
           <div className="mt-2 flex items-baseline justify-between">
             <span className="text-[var(--text-subtle)]">Total</span>
-            <span className="display text-2xl">{money(ticket.total)}</span>
+            <span className="display text-2xl">{money(compra.total)}</span>
           </div>
         </div>
-        <p className="mt-6 text-center text-[10px] uppercase tracking-wider text-[var(--text-subtle)]">¡Gracias por su compra!</p>
       </div>
     </Modal>
-  )
-}
-
-function Row({ label, value }) {
-  return (
-    <div className="flex justify-between font-mono text-xs">
-      <span className="text-[var(--text-subtle)]">{label}</span>
-      <span>{value}</span>
-    </div>
   )
 }

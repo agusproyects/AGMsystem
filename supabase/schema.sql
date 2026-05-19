@@ -499,8 +499,10 @@ begin
   if v_owner is null then raise exception 'no_auth'; end if;
 
   delete from public.venta_items      where owner_id = v_owner;
+  delete from public.compra_items     where owner_id = v_owner;
   delete from public.movimientos_caja where owner_id = v_owner;
   delete from public.ventas           where owner_id = v_owner;
+  delete from public.compras          where owner_id = v_owner;
   delete from public.productos        where owner_id = v_owner;
   delete from public.personas         where owner_id = v_owner;
   delete from public.categorias       where owner_id = v_owner;
@@ -508,6 +510,221 @@ end;
 $$;
 
 grant execute on function public.app_vaciar_datos() to authenticated;
+
+-- ---------------------------------------------------------------------
+-- Compras (paralelo a Ventas)
+-- ---------------------------------------------------------------------
+create table if not exists public.compras (
+  id            bigint generated always as identity primary key,
+  owner_id      uuid not null references auth.users(id) on delete cascade,
+  proveedor_id  bigint references public.personas(id) on delete set null,
+  fecha         timestamptz not null default now(),
+  total         numeric(12,2) not null default 0,
+  metodo_pago   text not null default 'efectivo'
+                  check (metodo_pago in ('efectivo','tarjeta','transferencia','cuenta_corriente','mp')),
+  estado        text not null default 'completada'
+                  check (estado in ('completada','anulada','pendiente')),
+  notas         text,
+  created_at    timestamptz not null default now()
+);
+
+create index if not exists ix_compras_owner     on public.compras(owner_id);
+create index if not exists ix_compras_proveedor on public.compras(proveedor_id);
+create index if not exists ix_compras_fecha     on public.compras(fecha desc);
+create index if not exists ix_compras_estado    on public.compras(estado);
+
+drop trigger if exists trg_compras_owner on public.compras;
+create trigger trg_compras_owner
+before insert on public.compras
+for each row execute function public.tg_set_owner_id();
+
+create table if not exists public.compra_items (
+  id            bigint generated always as identity primary key,
+  owner_id      uuid not null references auth.users(id) on delete cascade,
+  compra_id     bigint not null references public.compras(id) on delete cascade,
+  producto_id   bigint references public.productos(id) on delete set null,
+  nombre        text not null,
+  cantidad      numeric(12,3) not null check (cantidad > 0),
+  precio_unit   numeric(12,2) not null check (precio_unit >= 0),
+  subtotal      numeric(12,2) not null check (subtotal >= 0)
+);
+
+create index if not exists ix_compra_items_owner    on public.compra_items(owner_id);
+create index if not exists ix_compra_items_compra   on public.compra_items(compra_id);
+create index if not exists ix_compra_items_producto on public.compra_items(producto_id);
+
+drop trigger if exists trg_compra_items_owner on public.compra_items;
+create trigger trg_compra_items_owner
+before insert on public.compra_items
+for each row execute function public.tg_set_owner_id();
+
+alter table public.compras       enable row level security;
+alter table public.compra_items  enable row level security;
+
+do $$
+declare
+  t text;
+begin
+  for t in select unnest(array['compras','compra_items'])
+  loop
+    execute format($p$
+      drop policy if exists "owner %1$s sel" on public.%1$I;
+      create policy "owner %1$s sel" on public.%1$I
+        for select to authenticated
+        using (owner_id = auth.uid());
+
+      drop policy if exists "owner %1$s ins" on public.%1$I;
+      create policy "owner %1$s ins" on public.%1$I
+        for insert to authenticated
+        with check (owner_id = auth.uid());
+
+      drop policy if exists "owner %1$s upd" on public.%1$I;
+      create policy "owner %1$s upd" on public.%1$I
+        for update to authenticated
+        using (owner_id = auth.uid())
+        with check (owner_id = auth.uid());
+
+      drop policy if exists "owner %1$s del" on public.%1$I;
+      create policy "owner %1$s del" on public.%1$I
+        for delete to authenticated
+        using (owner_id = auth.uid());
+    $p$, t);
+  end loop;
+end $$;
+
+-- Registrar compra: inserta compra + items, suma stock, agrega egreso en caja
+-- y ajusta saldo del proveedor si es cta. corriente. Todo en una transacción.
+create or replace function public.app_register_compra(
+  p_items        jsonb,
+  p_proveedor_id bigint default null,
+  p_metodo_pago  text   default 'efectivo',
+  p_notas        text   default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_owner     uuid := auth.uid();
+  v_compra_id bigint;
+  v_total     numeric := 0;
+  v_item      jsonb;
+  v_result    jsonb;
+begin
+  if v_owner is null then raise exception 'no_auth'; end if;
+  if p_items is null or jsonb_array_length(p_items) = 0 then raise exception 'sin_items'; end if;
+
+  select coalesce(sum( (item->>'cantidad')::numeric * (item->>'precio_unit')::numeric ), 0)
+    into v_total
+    from jsonb_array_elements(p_items) item;
+
+  insert into public.compras (owner_id, proveedor_id, total, metodo_pago, notas)
+  values (v_owner, p_proveedor_id, v_total, p_metodo_pago, p_notas)
+  returning id into v_compra_id;
+
+  for v_item in select * from jsonb_array_elements(p_items)
+  loop
+    insert into public.compra_items (owner_id, compra_id, producto_id, nombre, cantidad, precio_unit, subtotal)
+    values (
+      v_owner,
+      v_compra_id,
+      nullif(v_item->>'producto_id', '')::bigint,
+      v_item->>'nombre',
+      (v_item->>'cantidad')::numeric,
+      (v_item->>'precio_unit')::numeric,
+      (v_item->>'cantidad')::numeric * (v_item->>'precio_unit')::numeric
+    );
+
+    if nullif(v_item->>'producto_id', '') is not null then
+      update public.productos
+         set stock = stock + (v_item->>'cantidad')::numeric::integer
+       where id = (v_item->>'producto_id')::bigint
+         and owner_id = v_owner;
+    end if;
+  end loop;
+
+  insert into public.movimientos_caja (owner_id, tipo, concepto, monto, metodo_pago)
+  values (v_owner, 'egreso', 'Compra #' || v_compra_id, v_total, p_metodo_pago);
+
+  if p_metodo_pago = 'cuenta_corriente' and p_proveedor_id is not null then
+    update public.personas
+       set saldo = saldo + v_total
+     where id = p_proveedor_id and owner_id = v_owner;
+  end if;
+
+  select jsonb_build_object(
+    'compra', to_jsonb(c.*),
+    'items', coalesce(
+      (select jsonb_agg(to_jsonb(ci.*) order by ci.id)
+         from public.compra_items ci
+        where ci.compra_id = v_compra_id),
+      '[]'::jsonb
+    )
+  )
+  into v_result
+  from public.compras c
+  where c.id = v_compra_id;
+
+  return v_result;
+end;
+$$;
+
+grant execute on function public.app_register_compra(jsonb, bigint, text, text) to authenticated;
+
+-- Registrar pago de/a una persona (cliente o proveedor).
+-- Cliente: ajusta saldo += monto, ingreso en caja.
+-- Proveedor: ajusta saldo -= monto, egreso en caja.
+create or replace function public.app_register_pago_persona(
+  p_persona_id  bigint,
+  p_monto       numeric,
+  p_metodo_pago text default 'efectivo',
+  p_notas       text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_owner    uuid := auth.uid();
+  v_persona  record;
+  v_tipo_mov text;
+  v_ajuste   numeric;
+begin
+  if v_owner is null then raise exception 'no_auth'; end if;
+  if p_monto is null or p_monto <= 0 then raise exception 'monto_invalido'; end if;
+
+  select * into v_persona
+    from public.personas
+   where id = p_persona_id and owner_id = v_owner;
+  if not found then raise exception 'persona_no_encontrada'; end if;
+
+  if v_persona.tipo = 'cliente' then
+    v_tipo_mov := 'ingreso';
+    v_ajuste   := p_monto;
+  else
+    v_tipo_mov := 'egreso';
+    v_ajuste   := -p_monto;
+  end if;
+
+  update public.personas
+     set saldo = saldo + v_ajuste
+   where id = p_persona_id and owner_id = v_owner;
+
+  insert into public.movimientos_caja (owner_id, tipo, concepto, monto, metodo_pago, notas)
+  values (
+    v_owner,
+    v_tipo_mov,
+    'Pago ' || (case when v_persona.tipo = 'cliente' then 'de ' else 'a ' end) || v_persona.nombre,
+    p_monto,
+    p_metodo_pago,
+    p_notas
+  );
+end;
+$$;
+
+grant execute on function public.app_register_pago_persona(bigint, numeric, text, text) to authenticated;
 
 -- =====================================================================
 -- Listo. Cada negocio que se registra obtiene su perfil automáticamente

@@ -15,12 +15,13 @@ const nextId = () => ++counter
 
 // Si Supabase está habilitado, no usamos seeds — el bootstrap los pisa.
 const initialData = supabaseEnabled
-  ? { categorias: [], productos: [], personas: [], ventas: [], movimientosCaja: [] }
+  ? { categorias: [], productos: [], personas: [], ventas: [], compras: [], movimientosCaja: [] }
   : {
       categorias: seedCategorias,
       productos: seedProductos,
       personas: seedPersonas,
       ventas: seedVentas,
+      compras: [],
       movimientosCaja: seedMovimientosCaja,
     }
 
@@ -48,6 +49,7 @@ export const useStore = create(
             productos: all.productos,
             personas: all.personas,
             ventas: all.ventas,
+            compras: all.compras,
             movimientosCaja: all.movimientosCaja,
             dataLoaded: true,
             bootstrapping: false,
@@ -59,7 +61,7 @@ export const useStore = create(
 
       resetClientCache: () => set({
         ...(supabaseEnabled
-          ? { categorias: [], productos: [], personas: [], ventas: [], movimientosCaja: [], dataLoaded: false }
+          ? { categorias: [], productos: [], personas: [], ventas: [], compras: [], movimientosCaja: [], dataLoaded: false }
           : {}),
       }),
 
@@ -307,6 +309,102 @@ export const useStore = create(
       },
 
       // ===========================================================
+      // Compras
+      // ===========================================================
+      registrarCompra: async (compra) => {
+        if (supabaseEnabled) {
+          const reg = await data.compra.registrar(compra)
+          const fresh = await data.refreshProductosYCaja()
+          set(s => ({
+            compras: [reg, ...s.compras],
+            productos: fresh.productos,
+            movimientosCaja: fresh.movimientosCaja,
+            personas: fresh.personas,
+          }))
+          return reg
+        }
+
+        // ----- Local fallback -----
+        const id = nextId()
+        const itemsCalc = compra.items.map(it => ({
+          ...it,
+          subtotal: Number((it.cantidad * it.precio_unit).toFixed(2)),
+        }))
+        const total = itemsCalc.reduce((s, it) => s + it.subtotal, 0)
+        const fecha = new Date().toISOString()
+        const reg = {
+          id, proveedor_id: compra.proveedor_id || null, fecha, total,
+          metodo_pago: compra.metodo_pago || 'efectivo', estado: 'completada',
+          notas: compra.notas || '', items: itemsCalc,
+        }
+        set(s => {
+          const productos = s.productos.map(p => {
+            const added = itemsCalc.filter(it => it.producto_id === p.id)
+                                   .reduce((sum, it) => sum + Number(it.cantidad), 0)
+            return added ? { ...p, stock: (p.stock || 0) + added } : p
+          })
+          const movimientosCaja = [...s.movimientosCaja, {
+            id: nextId(),
+            fecha,
+            tipo: 'egreso',
+            concepto: `Compra #${id}`,
+            monto: total,
+            metodo_pago: reg.metodo_pago,
+            venta_id: null,
+            notas: '',
+          }]
+          let personas = s.personas
+          if (reg.metodo_pago === 'cuenta_corriente' && reg.proveedor_id) {
+            personas = personas.map(p =>
+              p.id === reg.proveedor_id ? { ...p, saldo: (p.saldo || 0) + total } : p
+            )
+          }
+          return { compras: [reg, ...s.compras], productos, movimientosCaja, personas }
+        })
+        return reg
+      },
+
+      // ===========================================================
+      // Pagos (cliente o proveedor)
+      // ===========================================================
+      registrarPagoPersona: async ({ persona_id, monto, metodo_pago = 'efectivo', notas = '' }) => {
+        const m = Number(monto)
+        if (!m || m <= 0) throw new Error('Monto inválido')
+        const persona = get().personas.find(p => p.id === persona_id)
+        if (!persona) throw new Error('Persona no encontrada')
+
+        if (supabaseEnabled) {
+          await data.pago.registrar({ persona_id, monto: m, metodo_pago, notas })
+          const fresh = await data.refreshProductosYCaja()
+          set({
+            movimientosCaja: fresh.movimientosCaja,
+            personas: fresh.personas,
+          })
+          return
+        }
+
+        // ----- Local fallback -----
+        const tipoMov = persona.tipo === 'cliente' ? 'ingreso' : 'egreso'
+        const ajuste  = persona.tipo === 'cliente' ? m : -m
+        const fecha   = new Date().toISOString()
+        set(s => ({
+          personas: s.personas.map(p =>
+            p.id === persona_id ? { ...p, saldo: (p.saldo || 0) + ajuste } : p
+          ),
+          movimientosCaja: [...s.movimientosCaja, {
+            id: nextId(),
+            fecha,
+            tipo: tipoMov,
+            concepto: `Pago ${persona.tipo === 'cliente' ? 'de' : 'a'} ${persona.nombre}`,
+            monto: m,
+            metodo_pago,
+            venta_id: null,
+            notas: notas || '',
+          }],
+        }))
+      },
+
+      // ===========================================================
       // Caja
       // ===========================================================
       registrarMovimientoCaja: async (mov) => {
@@ -339,6 +437,7 @@ export const useStore = create(
           productos: seedProductos,
           personas: seedPersonas,
           ventas: seedVentas,
+          compras: [],
           movimientosCaja: seedMovimientosCaja,
         })
       },
@@ -351,6 +450,7 @@ export const useStore = create(
           productos: [],
           personas: [],
           ventas: [],
+          compras: [],
           movimientosCaja: [],
         })
       },
@@ -368,6 +468,7 @@ export const useStore = create(
               productos: state.productos,
               personas: state.personas,
               ventas: state.ventas,
+              compras: state.compras,
               movimientosCaja: state.movimientosCaja,
             }),
         theme: state.theme,

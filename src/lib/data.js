@@ -19,7 +19,7 @@ function rethrow(label, error) {
 // =====================================================================
 export async function bootstrap() {
   ensure()
-  const [cats, prods, pers, ventas, mov] = await Promise.all([
+  const [cats, prods, pers, ventas, compras, mov] = await Promise.all([
     supabase.from('categorias').select('*').order('id'),
     supabase.from('productos').select('*').order('nombre'),
     supabase.from('personas').select('*').order('nombre'),
@@ -27,21 +27,27 @@ export async function bootstrap() {
       .select('*, items:venta_items(*)')
       .order('fecha', { ascending: false })
       .limit(500),
+    supabase.from('compras')
+      .select('*, items:compra_items(*)')
+      .order('fecha', { ascending: false })
+      .limit(500),
     supabase.from('movimientos_caja')
       .select('*')
       .order('fecha', { ascending: false })
       .limit(1000),
   ])
-  if (cats.error)   rethrow('bootstrap.categorias', cats.error)
-  if (prods.error)  rethrow('bootstrap.productos', prods.error)
-  if (pers.error)   rethrow('bootstrap.personas', pers.error)
-  if (ventas.error) rethrow('bootstrap.ventas', ventas.error)
-  if (mov.error)    rethrow('bootstrap.movimientos', mov.error)
+  if (cats.error)    rethrow('bootstrap.categorias', cats.error)
+  if (prods.error)   rethrow('bootstrap.productos', prods.error)
+  if (pers.error)    rethrow('bootstrap.personas', pers.error)
+  if (ventas.error)  rethrow('bootstrap.ventas', ventas.error)
+  if (compras.error) rethrow('bootstrap.compras', compras.error)
+  if (mov.error)     rethrow('bootstrap.movimientos', mov.error)
   return {
     categorias: cats.data ?? [],
     productos: prods.data ?? [],
     personas: pers.data ?? [],
     ventas: (ventas.data ?? []).map(v => ({ ...v, items: v.items ?? [] })),
+    compras: (compras.data ?? []).map(c => ({ ...c, items: c.items ?? [] })),
     movimientosCaja: mov.data ?? [],
   }
 }
@@ -162,6 +168,45 @@ export const venta = {
       .single()
     if (error) rethrow('venta.byId', error)
     return data
+  },
+}
+
+// =====================================================================
+// Compras
+// =====================================================================
+export const compra = {
+  async registrar({ items, proveedor_id = null, metodo_pago = 'efectivo', notas = '' }) {
+    ensure()
+    const { data, error } = await supabase.rpc('app_register_compra', {
+      p_items: items.map(it => ({
+        producto_id: it.producto_id ?? null,
+        nombre: it.nombre,
+        cantidad: Number(it.cantidad),
+        precio_unit: Number(it.precio_unit),
+      })),
+      p_proveedor_id: proveedor_id,
+      p_metodo_pago: metodo_pago,
+      p_notas: notas || null,
+    })
+    if (error) rethrow('compra.registrar', error)
+    const c = data.compra
+    return { ...c, items: data.items ?? [] }
+  },
+}
+
+// =====================================================================
+// Pagos a/de personas (cliente o proveedor)
+// =====================================================================
+export const pago = {
+  async registrar({ persona_id, monto, metodo_pago = 'efectivo', notas = '' }) {
+    ensure()
+    const { error } = await supabase.rpc('app_register_pago_persona', {
+      p_persona_id: persona_id,
+      p_monto: Number(monto),
+      p_metodo_pago: metodo_pago,
+      p_notas: notas || null,
+    })
+    if (error) rethrow('pago.registrar', error)
   },
 }
 

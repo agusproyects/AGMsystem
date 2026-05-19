@@ -156,7 +156,7 @@ export function Ajustes() {
           <CardBody className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
             <ul className="flex flex-col gap-2">
               <Atajo k="⌘ K"  desc="Abrir buscador global" />
-              <Atajo k="G 1–8" desc="Saltar a sección" />
+              <Atajo k="G 1–9" desc="Saltar a sección" />
               <Atajo k="N"    desc="Nueva venta" />
               <Atajo k="T"    desc="Alternar tema" />
               <Atajo k="F2"   desc="Foco al buscador del POS" />

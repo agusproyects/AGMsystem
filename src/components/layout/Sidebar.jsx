@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard,
   ShoppingCart,
+  ShoppingBag,
   Package,
   Users,
   Truck,
@@ -21,12 +22,13 @@ import { UserMenu } from './UserMenu.jsx'
 const nav = [
   { to: '/',            label: 'Dashboard',   icon: LayoutDashboard, shortcut: '1' },
   { to: '/ventas',      label: 'Ventas',      icon: ShoppingCart,    shortcut: '2' },
-  { to: '/productos',   label: 'Productos',   icon: Package,         shortcut: '3' },
-  { to: '/clientes',    label: 'Clientes',    icon: Users,           shortcut: '4' },
-  { to: '/proveedores', label: 'Proveedores', icon: Truck,           shortcut: '5' },
-  { to: '/caja',        label: 'Caja',        icon: Wallet,          shortcut: '6' },
-  { to: '/reportes',    label: 'Reportes',    icon: LineChart,       shortcut: '7' },
-  { to: '/ajustes',     label: 'Ajustes',     icon: Settings,        shortcut: '8' },
+  { to: '/compras',     label: 'Compras',     icon: ShoppingBag,     shortcut: '3' },
+  { to: '/productos',   label: 'Productos',   icon: Package,         shortcut: '4' },
+  { to: '/clientes',    label: 'Clientes',    icon: Users,           shortcut: '5' },
+  { to: '/proveedores', label: 'Proveedores', icon: Truck,           shortcut: '6' },
+  { to: '/caja',        label: 'Caja',        icon: Wallet,          shortcut: '7' },
+  { to: '/reportes',    label: 'Reportes',    icon: LineChart,       shortcut: '8' },
+  { to: '/ajustes',     label: 'Ajustes',     icon: Settings,        shortcut: '9' },
 ]
 
 export function Sidebar() {
