@@ -3,9 +3,9 @@ import { cn } from '@/lib/utils.js'
 const base = 'inline-flex items-center justify-center gap-2 font-medium rounded-md transition-[transform,background,color,border,box-shadow] duration-150 active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap select-none'
 
 const variants = {
-  // Acento de marca — texto siempre ink-950 (alto contraste sobre chartreuse)
+  // Acento de marca — texto siempre negro absoluto (alto contraste sobre chartreuse)
   primary:
-    'bg-[var(--accent)] text-[var(--accent-fg)] font-semibold shadow-[0_1px_0_color-mix(in_oklab,var(--accent)_50%,white)_inset,0_8px_24px_-12px_color-mix(in_oklab,var(--accent)_60%,transparent)] hover:brightness-[1.04] active:brightness-95',
+    'bg-[var(--accent)] text-[var(--accent-fg)] font-bold tracking-tight shadow-[0_1px_0_color-mix(in_oklab,var(--accent)_50%,white)_inset,0_8px_24px_-12px_color-mix(in_oklab,var(--accent)_60%,transparent)] hover:brightness-[1.04] active:brightness-95',
 
   // Botón secundario sólido y legible en ambos temas
   secondary:

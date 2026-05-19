@@ -52,7 +52,7 @@
   --text-muted: var(--color-ink-300);   /* subido un escalón para mejor lectura */
   --text-subtle: var(--color-ink-400);
   --accent: var(--color-brand-300);
-  --accent-fg: var(--color-ink-950);
+  --accent-fg: #000000;                  /* negro absoluto para máximo contraste sobre chartreuse */
   --accent-text: var(--color-brand-300); /* uso del accent como texto */
 }
 
@@ -67,7 +67,7 @@
   --text-muted: var(--color-ink-600);   /* más oscuro = más legible en fondo claro */
   --text-subtle: var(--color-ink-500);
   --accent: var(--color-brand-400);
-  --accent-fg: var(--color-ink-950);
+  --accent-fg: #000000;                  /* negro absoluto para máximo contraste sobre chartreuse */
   --accent-text: var(--color-brand-600); /* verde oliva oscuro: legible sobre blanco */
 }
 

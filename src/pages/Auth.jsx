@@ -124,7 +124,7 @@ export function Auth() {
                 className={cn(
                   'rounded-full px-4 py-1.5 transition-colors',
                   mode === t
-                    ? 'bg-[var(--accent)] text-[var(--accent-fg)] font-medium'
+                    ? 'bg-[var(--accent)] text-[var(--accent-fg)] font-bold'
                     : 'text-[var(--text-muted)] hover:text-[var(--text)]'
                 )}
               >
