@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils.js'
 
 const tones = {
   neutral: 'border-[var(--border-strong)] text-[var(--text-muted)] bg-transparent',
-  brand:   'border-transparent text-[var(--accent-fg)] bg-[var(--accent)]',
+  brand:   'border-transparent !text-black font-semibold bg-[var(--accent)]',
   success: 'border-transparent text-[var(--color-success)] bg-[color-mix(in_oklab,var(--color-success)_18%,transparent)]',
   warning: 'border-transparent text-[var(--color-warning)] bg-[color-mix(in_oklab,var(--color-warning)_18%,transparent)]',
   danger:  'border-transparent text-[var(--color-danger)]  bg-[color-mix(in_oklab,var(--color-danger)_18%,transparent)]',
