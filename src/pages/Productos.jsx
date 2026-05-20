@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Package, Plus, Search, Filter, Pencil, Trash2, AlertTriangle,
-  ArrowDownUp, Tag, Minus, Plus as PlusIcon,
+  ArrowDownUp, Tag, Minus, Plus as PlusIcon, Copy, Wand2,
 } from 'lucide-react'
 import Fuse from 'fuse.js'
 import { useStore } from '@/store/useStore.js'
@@ -24,6 +24,21 @@ function blankProducto(categoriaDefault = null) {
     stock: 0, stock_minimo: 0, unidad: 'u', activo: true,
     marca: '', talle: '',
   }
+}
+
+// Arma un SKU sugerido tipo "REM-REY-M" desde categoría, marca y talle.
+// Si el SKU base ya está usado, suma un sufijo numérico (-2, -3…).
+function sugerirSku({ categoria, marca, talle }, usados = []) {
+  const slug = (txt, n) => (txt || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, n)
+  const base = [slug(categoria, 3), slug(marca, 3), slug(talle, 4)].filter(Boolean).join('-')
+  if (!base) return ''
+  const used = new Set(usados.filter(Boolean).map(s => s.toLowerCase()))
+  if (!used.has(base.toLowerCase())) return base
+  let i = 2
+  while (used.has(`${base}-${i}`.toLowerCase())) i++
+  return `${base}-${i}`
 }
 
 export function Productos() {
@@ -66,6 +81,7 @@ export function Productos() {
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
     [productos],
   )
+  const skusUsados = useMemo(() => productos.map(p => p.sku).filter(Boolean), [productos])
 
   const filtrados = useMemo(() => {
     let arr = q.trim() ? fuse.search(q).map(r => r.item) : [...productos]
@@ -106,6 +122,15 @@ export function Productos() {
     } catch (e) {
       toast({ kind: 'danger', title: 'No se pudo guardar', message: e.message })
     }
+  }
+
+  const duplicar = (p) => {
+    setEditing({
+      nombre: p.nombre, descripcion: p.descripcion || '',
+      categoria_id: p.categoria_id, marca: p.marca || '', talle: p.talle || '',
+      precio: p.precio, costo: p.costo, unidad: p.unidad, activo: p.activo,
+      stock: 0, stock_minimo: p.stock_minimo, sku: '',
+    })
   }
 
   const eliminar = async (p) => {
@@ -246,6 +271,9 @@ export function Productos() {
                       <Button variant="ghost" size="icon-sm" onClick={() => setEditing(p)} aria-label="Editar">
                         <Pencil className="size-3.5" />
                       </Button>
+                      <Button variant="ghost" size="icon-sm" onClick={() => duplicar(p)} aria-label="Duplicar">
+                        <Copy className="size-3.5" />
+                      </Button>
                       <Button variant="ghost" size="icon-sm" onClick={() => eliminar(p)} aria-label="Eliminar">
                         <Trash2 className="size-3.5" />
                       </Button>
@@ -265,6 +293,7 @@ export function Productos() {
         categorias={categorias}
         marcas={marcasExistentes}
         talles={tallesExistentes}
+        skus={skusUsados}
         onClose={() => setEditing(null)}
         onSave={guardar}
       />
@@ -321,11 +350,16 @@ function SortBtn({ label, k, sort, onClick, align = 'left' }) {
   )
 }
 
-function ProductoForm({ open, value, categorias, marcas = [], talles = [], onClose, onSave }) {
+function ProductoForm({ open, value, categorias, marcas = [], talles = [], skus = [], onClose, onSave }) {
   const [f, setF] = useState(value)
   useEffect(() => { setF(value) }, [value])
   if (!open || !f) return null
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }))
+  const generarSku = () => {
+    const catNombre = categorias.find(c => c.id === f.categoria_id)?.nombre
+    const sku = sugerirSku({ categoria: catNombre, marca: f.marca, talle: f.talle }, skus)
+    if (sku) set('sku', sku)
+  }
 
   return (
     <Modal
@@ -348,7 +382,12 @@ function ProductoForm({ open, value, categorias, marcas = [], talles = [], onClo
           <Input value={f.nombre} onChange={e => set('nombre', e.target.value)} placeholder="Ej: Remera urbana Rey Fiel" />
         </Field>
         <Field label="SKU / Código" hint="opcional">
-          <Input value={f.sku || ''} onChange={e => set('sku', e.target.value)} placeholder="REM-001" className="font-mono" />
+          <div className="flex gap-1.5">
+            <Input value={f.sku || ''} onChange={e => set('sku', e.target.value)} placeholder="REM-001" className="font-mono" />
+            <Button variant="outline" size="icon" onClick={generarSku} title="Sugerir SKU desde categoría, marca y talle">
+              <Wand2 className="size-4" />
+            </Button>
+          </div>
         </Field>
 
         <Field label="Categoría">
