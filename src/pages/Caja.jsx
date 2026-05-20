@@ -255,13 +255,13 @@ export function Caja() {
         open={cierreOpen}
         resumen={resumenHoy}
         onClose={() => setCierreOpen(false)}
-        onSave={async ({ efectivo_contado, notas }) => {
+        onSave={async ({ efectivo_contado, fondo_inicial, notas }) => {
           if (!supabaseEnabled) {
             toast({ kind: 'warning', title: 'Sólo disponible en modo Supabase' })
             return
           }
           try {
-            const nuevo = await cierreApi.cerrar({ efectivo_contado, notas })
+            const nuevo = await cierreApi.cerrar({ efectivo_contado, fondo_inicial, notas })
             setCierreOpen(false)
             setZPrint(nuevo)
             cierreApi.listar(10).then(setCierres).catch(() => {})
@@ -279,15 +279,18 @@ export function Caja() {
 
 function CierreModal({ open, resumen, onClose, onSave }) {
   const [contado, setContado] = useState('')
+  const [fondo, setFondo] = useState('')
   const [notas, setNotas] = useState('')
 
   useEffect(() => {
-    if (open) { setContado(''); setNotas('') }
+    if (open) { setContado(''); setFondo(''); setNotas('') }
   }, [open])
 
   if (!open) return null
   const contadoNum = Number(contado) || 0
-  const diferencia = contadoNum - resumen.efectivo_esperado
+  const fondoNum   = Number(fondo) || 0
+  const esperado   = fondoNum + resumen.efectivo_ingresos - resumen.efectivo_egresos
+  const diferencia = contadoNum - esperado
 
   return (
     <Modal
@@ -299,7 +302,7 @@ function CierreModal({ open, resumen, onClose, onSave }) {
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" disabled={contado === ''} onClick={() => onSave({ efectivo_contado: contadoNum, notas })}>
+          <Button variant="primary" disabled={contado === ''} onClick={() => onSave({ efectivo_contado: contadoNum, fondo_inicial: fondoNum, notas })}>
             <Lock className="size-4" /> Confirmar cierre
           </Button>
         </>
@@ -316,10 +319,13 @@ function CierreModal({ open, resumen, onClose, onSave }) {
             <p className="font-mono mt-1 text-lg text-[var(--color-warning)]">{money(resumen.efectivo_egresos)}</p>
           </CardBody></Card>
         </div>
+        <Field label="Fondo de caja inicial" hint="plata de cambio · ARS">
+          <Input type="number" min="0" step="0.01" value={fondo} onChange={e => setFondo(e.target.value)} placeholder="0" className="font-mono" />
+        </Field>
         <Card><CardBody className="px-4 py-3">
           <p className="text-[10px] uppercase tracking-wider text-[var(--text-subtle)]">Efectivo esperado en caja</p>
-          <p className="display mt-1 text-3xl text-[var(--accent-text)]">{money(resumen.efectivo_esperado)}</p>
-          <p className="mt-1 text-xs text-[var(--text-subtle)]">Sólo movimientos en efectivo del día.</p>
+          <p className="display mt-1 text-3xl text-[var(--accent-text)]">{money(esperado)}</p>
+          <p className="mt-1 text-xs text-[var(--text-subtle)]">Fondo inicial + ingresos − egresos en efectivo del día.</p>
         </CardBody></Card>
         <Field label="Efectivo contado físicamente" hint="ARS">
           <Input type="number" min="0" step="0.01" value={contado} onChange={e => setContado(e.target.value)} className="font-mono" autoFocus />
@@ -391,6 +397,10 @@ function ZTicketModal({ cierre, onClose }) {
           </tbody>
         </table>
         <div className="mt-4 border-t border-dashed border-[var(--border)] pt-3 text-sm">
+          <div className="flex justify-between font-mono text-xs">
+            <span className="text-[var(--text-subtle)]">Fondo inicial</span>
+            <span>{money(cierre.fondo_inicial)}</span>
+          </div>
           <div className="flex justify-between font-mono text-xs">
             <span className="text-[var(--text-subtle)]">Efectivo esperado</span>
             <span>{money(cierre.efectivo_esperado)}</span>

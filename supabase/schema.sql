@@ -160,6 +160,7 @@ create table if not exists public.personas (
   direccion     text,
   notas         text,
   saldo         numeric(12,2) not null default 0,
+  fecha_alta    date not null default (now() at time zone 'America/Argentina/Buenos_Aires')::date,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
@@ -167,6 +168,14 @@ create table if not exists public.personas (
 create index if not exists ix_personas_owner       on public.personas(owner_id);
 create index if not exists ix_personas_tipo        on public.personas(tipo);
 create index if not exists ix_personas_nombre_trgm on public.personas using gin (nombre gin_trgm_ops);
+
+-- Fecha de alta editable. Idempotente; rellena las filas viejas con created_at.
+alter table public.personas add column if not exists fecha_alta date;
+update public.personas
+   set fecha_alta = (created_at at time zone 'America/Argentina/Buenos_Aires')::date
+ where fecha_alta is null;
+alter table public.personas
+  alter column fecha_alta set default (now() at time zone 'America/Argentina/Buenos_Aires')::date;
 
 drop trigger if exists trg_personas_updated on public.personas;
 create trigger trg_personas_updated
@@ -841,6 +850,7 @@ create table if not exists public.cierres_caja (
   owner_id        uuid not null references auth.users(id) on delete cascade,
   fecha           timestamptz not null default now(),
   dia             date not null default (now() at time zone 'America/Argentina/Buenos_Aires')::date,
+  fondo_inicial     numeric(12,2) not null default 0,
   efectivo_esperado numeric(12,2) not null default 0,
   efectivo_contado  numeric(12,2) not null default 0,
   diferencia        numeric(12,2) not null default 0,
@@ -853,6 +863,9 @@ create table if not exists public.cierres_caja (
 
 create index if not exists ix_cierres_caja_owner on public.cierres_caja(owner_id);
 create index if not exists ix_cierres_caja_dia   on public.cierres_caja(dia desc);
+
+-- Fondo de caja inicial (plata de cambio del arranque). Idempotente.
+alter table public.cierres_caja add column if not exists fondo_inicial numeric(12,2) not null default 0;
 
 drop trigger if exists trg_cierres_caja_owner on public.cierres_caja;
 create trigger trg_cierres_caja_owner
@@ -917,9 +930,13 @@ $$;
 grant execute on function public.app_caja_resumen_hoy() to authenticated;
 
 -- Registrar cierre de caja: calcula los esperados, guarda el cierre.
+-- efectivo_esperado = fondo_inicial + ingresos efectivo - egresos efectivo.
+-- Se dropea la firma vieja (numeric, text) porque ahora suma un parámetro.
+drop function if exists public.app_cerrar_caja(numeric, text);
 create or replace function public.app_cerrar_caja(
   p_efectivo_contado numeric,
-  p_notas            text default null
+  p_notas            text    default null,
+  p_fondo_inicial    numeric default 0
 )
 returns jsonb
 language plpgsql
@@ -927,18 +944,20 @@ security definer
 set search_path = public
 as $$
 declare
-  v_owner uuid := auth.uid();
-  v_tz    text := 'America/Argentina/Buenos_Aires';
-  v_dia   date;
-  v_ef_in numeric := 0; v_ef_eg numeric := 0;
-  v_in    numeric := 0; v_eg    numeric := 0;
+  v_owner  uuid := auth.uid();
+  v_tz     text := 'America/Argentina/Buenos_Aires';
+  v_dia    date;
+  v_ef_in  numeric := 0; v_ef_eg numeric := 0;
+  v_in     numeric := 0; v_eg    numeric := 0;
+  v_fondo  numeric := coalesce(p_fondo_inicial, 0);
   v_ef_esp numeric;
-  v_id    bigint;
+  v_id     bigint;
 begin
   if v_owner is null then raise exception 'no_auth'; end if;
   if p_efectivo_contado is null or p_efectivo_contado < 0 then
     raise exception 'monto_invalido';
   end if;
+  if v_fondo < 0 then raise exception 'fondo_invalido'; end if;
   v_dia := (now() at time zone v_tz)::date;
 
   select
@@ -951,13 +970,13 @@ begin
   where owner_id = v_owner
     and (fecha at time zone v_tz)::date = v_dia;
 
-  v_ef_esp := v_ef_in - v_ef_eg;
+  v_ef_esp := v_fondo + v_ef_in - v_ef_eg;
 
   insert into public.cierres_caja (
-    owner_id, dia, efectivo_esperado, efectivo_contado, diferencia,
+    owner_id, dia, fondo_inicial, efectivo_esperado, efectivo_contado, diferencia,
     total_esperado, ingresos, egresos, notas
   ) values (
-    v_owner, v_dia, v_ef_esp, p_efectivo_contado, p_efectivo_contado - v_ef_esp,
+    v_owner, v_dia, v_fondo, v_ef_esp, p_efectivo_contado, p_efectivo_contado - v_ef_esp,
     v_in - v_eg, v_in, v_eg, p_notas
   )
   returning id into v_id;
@@ -966,7 +985,7 @@ begin
 end;
 $$;
 
-grant execute on function public.app_cerrar_caja(numeric, text) to authenticated;
+grant execute on function public.app_cerrar_caja(numeric, text, numeric) to authenticated;
 
 -- =====================================================================
 -- Listo. Cada negocio que se registra obtiene su perfil automáticamente

@@ -4,7 +4,7 @@ import { Users, Truck, Plus, Search, Pencil, Trash2, Phone, Mail, MapPin, Histor
 import Fuse from 'fuse.js'
 import { useStore } from '@/store/useStore.js'
 import { useShallow } from 'zustand/react/shallow'
-import { money, dateTime, relativeShort } from '@/lib/format.js'
+import { money, dateTime, dateOnly, relativeShort, isoDay } from '@/lib/format.js'
 import { cn } from '@/lib/utils.js'
 import { SectionHeader } from '@/components/ui/SectionHeader.jsx'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card.jsx'
@@ -33,7 +33,7 @@ const cfg = {
 }
 
 function blank(tipo) {
-  return { tipo, nombre: '', documento: '', telefono: '', email: '', direccion: '', notas: '', saldo: 0 }
+  return { tipo, nombre: '', documento: '', telefono: '', email: '', direccion: '', notas: '', saldo: 0, fecha_alta: isoDay() }
 }
 
 export function PersonasView({ tipo }) {
@@ -243,6 +243,9 @@ function PersonaForm({ open, value, tipo, onClose, onSave }) {
         <Field label="Dirección">
           <Input value={f.direccion || ''} onChange={e => set('direccion', e.target.value)} />
         </Field>
+        <Field label="Fecha de alta" hint={`${tipo} desde`}>
+          <Input type="date" value={f.fecha_alta || ''} onChange={e => set('fecha_alta', e.target.value)} />
+        </Field>
         {tipo === 'cliente' && (
           <Field label="Saldo inicial" hint="cta. corriente">
             <Input type="number" step="0.01" value={f.saldo} onChange={e => set('saldo', e.target.value)} className="font-mono" />
@@ -282,7 +285,10 @@ function DetalleModal({ persona, ventas, onClose, onEdit }) {
       open={!!persona}
       onClose={onClose}
       title={persona.nombre}
-      subtitle={persona.documento || ' '}
+      subtitle={[
+        persona.documento,
+        persona.fecha_alta && `Alta: ${dateOnly(persona.fecha_alta + 'T00:00:00')}`,
+      ].filter(Boolean).join('  ·  ') || ' '}
       size="lg"
       footer={
         <>

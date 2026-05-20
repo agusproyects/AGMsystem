@@ -119,6 +119,7 @@ export const per = {
     ensure()
     const { id, ...data } = payload
     data.saldo = Number(data.saldo) || 0
+    if (data.fecha_alta === '') data.fecha_alta = null
     const q = id
       ? supabase.from('personas').update(data).eq('id', id).select().single()
       : supabase.from('personas').insert(data).select().single()
@@ -253,11 +254,12 @@ export const cierre = {
     if (error) rethrow('cierre.resumenHoy', error)
     return data
   },
-  async cerrar({ efectivo_contado, notas }) {
+  async cerrar({ efectivo_contado, notas, fondo_inicial = 0 }) {
     ensure()
     const { data, error } = await supabase.rpc('app_cerrar_caja', {
       p_efectivo_contado: Number(efectivo_contado),
       p_notas: notas || null,
+      p_fondo_inicial: Number(fondo_inicial) || 0,
     })
     if (error) rethrow('cierre.cerrar', error)
     return data
