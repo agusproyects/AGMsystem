@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Search, ShoppingCart, X, Plus, Minus, User, Banknote, CreditCard, ArrowRight,
-  Trash2, Receipt, Wallet, Percent, Sparkles,
+  Trash2, Receipt, Wallet, Percent, Sparkles, FileDown,
 } from 'lucide-react'
 import Fuse from 'fuse.js'
 import { useStore } from '@/store/useStore.js'
 import { money, dateTime } from '@/lib/format.js'
+import { ventaTicketPDF } from '@/lib/pdf.js'
 import { cn } from '@/lib/utils.js'
 import { SectionHeader } from '@/components/ui/SectionHeader.jsx'
 import { Card, CardBody } from '@/components/ui/Card.jsx'
@@ -396,6 +397,9 @@ function TicketModal({ ticket, onClose, clientes }) {
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cerrar</Button>
+          <Button variant="outline" onClick={() => ventaTicketPDF(ticket, clientes)}>
+            <FileDown className="size-4" /> Guardar PDF
+          </Button>
           <Button variant="primary" onClick={() => window.print()}>
             <Receipt className="size-4" /> Imprimir
           </Button>

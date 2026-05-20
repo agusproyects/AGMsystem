@@ -4,6 +4,7 @@ import { useStore } from '@/store/useStore.js'
 import { money, dateTime, isoDay, dateOnly } from '@/lib/format.js'
 import { cn, downloadText } from '@/lib/utils.js'
 import { cierre as cierreApi } from '@/lib/data.js'
+import { cierreZPDF } from '@/lib/pdf.js'
 import { supabaseEnabled } from '@/lib/supabase.js'
 import { SectionHeader } from '@/components/ui/SectionHeader.jsx'
 import { Card, CardBody, CardHeader, StatCard } from '@/components/ui/Card.jsx'
@@ -363,6 +364,9 @@ function ZTicketModal({ cierre, onClose }) {
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cerrar</Button>
+          <Button variant="outline" onClick={() => cierreZPDF(cierre)}>
+            <FileDown className="size-4" /> Guardar PDF
+          </Button>
           <Button variant="primary" onClick={() => window.print()}>
             <Receipt className="size-4" /> Imprimir
           </Button>
