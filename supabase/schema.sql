@@ -253,15 +253,21 @@ before insert on public.movimientos_caja
 for each row execute function public.tg_set_owner_id();
 
 -- ---------------------------------------------------------------------
--- Vistas (respetan RLS implícitamente)
+-- Vistas
+-- IMPORTANTE: security_invoker = true hace que la vista corra con los
+-- permisos del usuario que consulta (no del creador), de modo que el RLS
+-- de las tablas subyacentes SÍ se aplica. Sin esto, la vista filtraría
+-- datos de TODOS los negocios. Requiere Postgres 15+ (Supabase lo cumple).
 -- ---------------------------------------------------------------------
-create or replace view public.v_stock_bajo as
+create or replace view public.v_stock_bajo
+  with (security_invoker = true) as
   select id, owner_id, sku, nombre, stock, stock_minimo
   from public.productos
   where activo and stock <= stock_minimo
   order by stock asc;
 
-create or replace view public.v_ventas_dia as
+create or replace view public.v_ventas_dia
+  with (security_invoker = true) as
   select owner_id,
          date_trunc('day', fecha) as dia,
          count(*)                  as cantidad,
