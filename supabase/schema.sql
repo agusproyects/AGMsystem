@@ -112,6 +112,8 @@ create table if not exists public.productos (
   sku             text,
   nombre          text not null,
   descripcion     text,
+  marca           text,
+  talle           text,
   categoria_id    bigint references public.categorias(id) on delete set null,
   precio          numeric(12,2) not null default 0 check (precio >= 0),
   costo           numeric(12,2) not null default 0 check (costo >= 0),
@@ -128,6 +130,11 @@ create index if not exists ix_productos_owner       on public.productos(owner_id
 create index if not exists ix_productos_categoria   on public.productos(categoria_id);
 create index if not exists ix_productos_activo      on public.productos(activo);
 create index if not exists ix_productos_nombre_trgm on public.productos using gin (nombre gin_trgm_ops);
+
+-- Indumentaria: marca + talle. Idempotente — corre OK en bases ya creadas.
+alter table public.productos add column if not exists marca text;
+alter table public.productos add column if not exists talle text;
+create index if not exists ix_productos_marca on public.productos(owner_id, marca);
 
 drop trigger if exists trg_productos_updated on public.productos;
 create trigger trg_productos_updated

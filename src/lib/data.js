@@ -86,6 +86,8 @@ export const prod = {
     data.stock        = Number(data.stock)  || 0
     data.stock_minimo = Number(data.stock_minimo) || 0
     if (data.sku === '') data.sku = null
+    if (data.marca === '') data.marca = null
+    if (data.talle === '') data.talle = null
     const q = id
       ? supabase.from('productos').update(data).eq('id', id).select().single()
       : supabase.from('productos').insert(data).select().single()

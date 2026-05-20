@@ -22,6 +22,7 @@ function blankProducto(categoriaDefault = null) {
     sku: '', nombre: '', descripcion: '',
     categoria_id: categoriaDefault, precio: 0, costo: 0,
     stock: 0, stock_minimo: 0, unidad: 'u', activo: true,
+    marca: '', talle: '',
   }
 }
 
@@ -38,6 +39,7 @@ export function Productos() {
   const [params, setParams] = useSearchParams()
   const [q, setQ]           = useState(params.get('q') || '')
   const [cat, setCat]       = useState('todas')
+  const [marca, setMarca]   = useState('todas')
   const [estado, setEstado] = useState('todos')
   const [sort, setSort]     = useState({ key: 'nombre', dir: 'asc' })
   const [editing, setEditing] = useState(null)
@@ -52,12 +54,23 @@ export function Productos() {
 
   const fuse = useMemo(() => new Fuse(productos, {
     threshold: 0.32,
-    keys: ['nombre', 'sku', 'descripcion'],
+    keys: ['nombre', 'sku', 'descripcion', 'marca', 'talle'],
   }), [productos])
+
+  const marcasExistentes = useMemo(
+    () => [...new Set(productos.map(p => p.marca).filter(Boolean))].sort(),
+    [productos],
+  )
+  const tallesExistentes = useMemo(
+    () => [...new Set(productos.map(p => p.talle).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+    [productos],
+  )
 
   const filtrados = useMemo(() => {
     let arr = q.trim() ? fuse.search(q).map(r => r.item) : [...productos]
     if (cat !== 'todas') arr = arr.filter(p => String(p.categoria_id) === String(cat))
+    if (marca !== 'todas') arr = arr.filter(p => p.marca === marca)
     if (estado === 'activos')   arr = arr.filter(p => p.activo)
     if (estado === 'inactivos') arr = arr.filter(p => !p.activo)
     if (estado === 'bajo')      arr = arr.filter(p => p.stock <= p.stock_minimo)
@@ -70,7 +83,7 @@ export function Productos() {
       return dir === 'asc' ? va - vb : vb - va
     })
     return arr
-  }, [productos, q, cat, estado, sort, fuse])
+  }, [productos, q, cat, marca, estado, sort, fuse])
 
   const catName = (id) => categorias.find(c => c.id === id)?.nombre || '—'
   const catColor = (id) => categorias.find(c => c.id === id)?.color
@@ -141,6 +154,10 @@ export function Productos() {
               <option value="todas">Todas las categorías</option>
               {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </Select>
+            <Select value={marca} onChange={e => setMarca(e.target.value)} className="w-[150px]">
+              <option value="todas">Todas las marcas</option>
+              {marcasExistentes.map(m => <option key={m} value={m}>{m}</option>)}
+            </Select>
             <Select value={estado} onChange={e => setEstado(e.target.value)} className="w-[150px]">
               <option value="todos">Todos</option>
               <option value="activos">Activos</option>
@@ -186,6 +203,8 @@ export function Productos() {
                     <p className="font-medium">{p.nombre}</p>
                     <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--text-subtle)]">
                       <span className="font-mono">{p.sku || '—'}</span>
+                      {p.marca && <span>· {p.marca}</span>}
+                      {p.talle && <span>· Talle {p.talle}</span>}
                       {p.descripcion && <span className="truncate max-w-[260px]">· {p.descripcion}</span>}
                     </div>
                   </TD>
@@ -244,6 +263,8 @@ export function Productos() {
         open={!!editing}
         value={editing}
         categorias={categorias}
+        marcas={marcasExistentes}
+        talles={tallesExistentes}
         onClose={() => setEditing(null)}
         onSave={guardar}
       />
@@ -300,7 +321,7 @@ function SortBtn({ label, k, sort, onClick, align = 'left' }) {
   )
 }
 
-function ProductoForm({ open, value, categorias, onClose, onSave }) {
+function ProductoForm({ open, value, categorias, marcas = [], talles = [], onClose, onSave }) {
   const [f, setF] = useState(value)
   useEffect(() => { setF(value) }, [value])
   if (!open || !f) return null
@@ -324,10 +345,10 @@ function ProductoForm({ open, value, categorias, onClose, onSave }) {
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Field label="Nombre" className="sm:col-span-2">
-          <Input value={f.nombre} onChange={e => set('nombre', e.target.value)} placeholder="Ej: Yerba mate 1kg" />
+          <Input value={f.nombre} onChange={e => set('nombre', e.target.value)} placeholder="Ej: Remera urbana Rey Fiel" />
         </Field>
         <Field label="SKU / Código" hint="opcional">
-          <Input value={f.sku || ''} onChange={e => set('sku', e.target.value)} placeholder="ALM-001" className="font-mono" />
+          <Input value={f.sku || ''} onChange={e => set('sku', e.target.value)} placeholder="REM-001" className="font-mono" />
         </Field>
 
         <Field label="Categoría">
@@ -336,6 +357,13 @@ function ProductoForm({ open, value, categorias, onClose, onSave }) {
             {categorias.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </Select>
         </Field>
+        <Field label="Marca" hint="opcional">
+          <Input value={f.marca || ''} onChange={e => set('marca', e.target.value)} list="dl-marcas" placeholder="Adidas, Rey Fiel…" />
+        </Field>
+        <Field label="Talle" hint="opcional">
+          <Input value={f.talle || ''} onChange={e => set('talle', e.target.value)} list="dl-talles" placeholder="S, M, L, 42, Único…" />
+        </Field>
+
         <Field label="Unidad">
           <Select value={f.unidad} onChange={e => set('unidad', e.target.value)}>
             <option value="u">unidades</option>
@@ -351,6 +379,11 @@ function ProductoForm({ open, value, categorias, onClose, onSave }) {
             <option value="1">Activo</option>
             <option value="0">Inactivo</option>
           </Select>
+        </Field>
+        <Field label="ID" hint="auto">
+          <div className="h-9 grid place-items-center rounded-md border border-dashed border-[var(--border)] px-3 font-mono text-sm text-[var(--text-subtle)]">
+            {f.id || 'nuevo'}
+          </div>
         </Field>
 
         <Field label="Precio venta" hint="ARS">
@@ -371,16 +404,18 @@ function ProductoForm({ open, value, categorias, onClose, onSave }) {
         <Field label="Stock mínimo">
           <Input type="number" min="0" step="1" value={f.stock_minimo} onChange={e => set('stock_minimo', e.target.value)} className="font-mono" />
         </Field>
-        <Field label="ID" hint="auto" className="sm:block hidden">
-          <div className="h-9 grid place-items-center rounded-md border border-dashed border-[var(--border)] px-3 font-mono text-sm text-[var(--text-subtle)]">
-            {f.id || 'nuevo'}
-          </div>
-        </Field>
 
         <Field label="Descripción" className="sm:col-span-3">
           <Textarea value={f.descripcion || ''} onChange={e => set('descripcion', e.target.value)} placeholder="Notas internas, características, etc." />
         </Field>
       </div>
+
+      <datalist id="dl-marcas">
+        {marcas.map(m => <option key={m} value={m} />)}
+      </datalist>
+      <datalist id="dl-talles">
+        {talles.map(t => <option key={t} value={t} />)}
+      </datalist>
     </Modal>
   )
 }
